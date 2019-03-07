@@ -1,0 +1,135 @@
+# Wim corrections file, started 20.10.13
+# this hand-made collection of corrections are be merged with the extracted refs
+# handy for fixing missing links
+
+# using primary key (category, basename) as tuple
+{
+("demos", "Sanity_Arte"): {"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/S/Sanity", "type": ".dms", "file": "Sanity-Arte.dms"}]}},
+("demos", "MelonDezign_Baygon"): {"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/M/Melon-Dezign", "type": ".dms", "file": "MD-Baygon.DMS"}]}},
+("demos", "Complex_A1200Demo"): {"images": {1: [{"seenat": "http://p.muhlheim.free.fr/Amiga/demos", "type": ".dms", "file": "Complex_A1200Demo.dms"}]}},
+("demos", "MelonDezign_How2SkinACat"): {"images": {1: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/MelonDezign", "type": ".dms", "file": "MelonDezign.HowToSkinACat.dms"}]}},
+("demos", "Excellence_Megademo"):{"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/E/Excellence", "type": ".dms", "file": "EXCELLENCE-Megademo.dms"}]}},
+
+("demos", "Sanity_Jesterday"):{"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/S/Sanity", "type": ".dms", "file": "Sanity-Jesterday.dms"}]}},
+
+("demos", "Sanity_WorldOfCommodore"):{"images": {1: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Sanity/", "type": ".dms", "file": "Sanity.WorldOfCommodore.dms"}]}},
+
+("demos", "Kefrens_DesertDream"):{"images": 
+{
+ 1: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Kefrens", "type": ".dms", "file": "Kefrens.DesertDreams-1.dms"}],
+ 2: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Kefrens", "type": ".dms", "file": "Kefrens.DesertDreams-2.dms"}]
+}
+},
+
+#- rawdic
+("demos", "Alcatraz_DevilsKey"):{"images": 
+{
+ 1: [{"seenat": "ftp://ftp.amigascne.org/pub/amiga/Groups/A/Alcatraz", "type": ".dms", "file": "ALCATRAZ-Megademo4a.DMS"}],
+ 2: [{"seenat": "ftp://ftp.amigascne.org/pub/amiga/Groups/A/Alcatraz", "type": ".dms", "file": "ALCATRAZ-Megademo4b.DMS"}],
+ 3: [{"seenat": "ftp://ftp.amigascne.org/pub/amiga/Groups/A/Alcatraz", "type": ".dms", "file": "ALCATRAZ-Megademo4c.DMS"}],
+ }
+},
+
+("games", "Katakis"):{"images": {1: [{"seenat": "http://www.factor5.de/downloads", "type": "zip,adf", "file": "katakis.zip", "image": "Katakis.adf"}]}},
+("games", "RType"):{"images": {1: [{"seenat": "http://www.factor5.de/downloads", "type": "zip,adf", "file": "r-type.zip", "image": "R-Type.adf"}]}},
+
+("demos", "Lemon_RinkADink"): {"images": {1: [{"seenat": "http://p.muhlheim.free.fr/Amiga/demos", "type": ".dms", "file": "Lemon_RinkADink.dms"}]}},
+
+("demos", "Kefrens_Masterpieces"): {"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/K/Kefrens", "type": ".dms", "file": "KEFRENS-Masterpieces.dms"}]}},
+("demos", "Sanity_Roots2"): {"images": {1: [{"seenat": "ftp://amigascne.org/pub/amiga/Groups/S/Sanity", "type": ".dms", "file": "SANITY-RootsV2.0.dms"}]}},
+("demos", "PMC_AlphaAndOmega"): {"images": {1: [{"seenat": "http://aminet.net/demo/tp92", "type": ".dms", "file": "PMC.AlphaOmega.dms"}]}},
+
+
+#- rawdic
+("demos", "Andromeda_SevenSeas"): {"images": 
+{
+ 1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/A/Andromeda", "type": ".dms", "file": "Andromeda-7Seas_A.dms"}],
+ 2: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/A/Andromeda", "type": ".dms", "file": "Andromeda-7Seas_B.dms"}]
+ }
+},
+
+("demos", "Andromeda_PointBlank"): {"images": {1: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Andromeda", "type": ".dms", "file": "Andromeda.PointBlank.dms"}]}},
+("demos", "Intryx_CheckedImplosion"): {"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/I/Intryx", "type": ".dms", "file": "Intryx-CheckedImplosion.dms"}]}},
+("demos", "Pentagon_BlacknWhite"): {"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/D/Drifters", "type": ".dms", "file": "Pentagon-BlackWhite.dms"}]}},
+("demos", "Spaceballs_StateOfTheArt"): {"images": {1: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Spaceballs", "type": ".dms", "file": "Spaceballs.StateoftheArt-512k.dms"}]}},
+
+("demos", "VirtualDreams_AbsoluteIne"): {"images": 
+{
+ 1: [{"seenat": "ftp://ftp.amigascne.org/pub/amiga/Groups/V/Virtual_Dreams", "type": ".dms", "file": "VD-AbsoluteInebriation-A.DMS"}],
+ 2: [{"seenat": "ftp://ftp.amigascne.org/pub/amiga/Groups/V/Virtual_Dreams", "type": ".dms", "file": "VD-AbsoluteInebriation-B.DMS"}]
+ }
+},
+
+("demos", "Spaceballs_MobileDestinati"): {"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/S/Spaceballs", "type": ".dms", "file": "SPACEBALLS-MobileDestiUnk.DMS"}]}},
+
+("demos", "Phenomena_Enigma"): {"images": {1: [{"seenat": "http://ftp.amigascne.org/pub/amiga/Groups/P/Phenomena", "type": ".dms", "file": "PHENOMENA-Enigma.DMS"}]}},
+
+#
+# fix "" demos which need renaming, 27.10.
+# template: ("demos", ""): {"images": {1: [{'seenat': '', 'type': '', 'file': '', 'copyas': ''}]}},
+#
+
+#+
+("demos", "Phenomena_Animotion"): {"images": {1: [{'seenat': 'ftp://ftp.amigascne.org/pub/amiga/Groups/P/Phenomena', 'type': '', 'file': 'PHENOMENA-Animotion', 'copyas': 'Animotion'}]}},
+#+
+("demos", "Thrust_Ottifanten"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/T/Thrust', 'type': '', 'file': 'THRUST-Ottifanten', 'copyas': 'Ottifanten'}]}},
+#+
+("demos", "Thrust_Ottifanten2"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/T/Thrust', 'type': '', 'file': 'THRUST-ottiimMoni', 'copyas': 'OttiImMoni'}]}},
+
+# idea: modify copy algorithm, then have shorter data, but non-trivial on the code side (dict.update does not work, so needs recursive stuff)
+#("demos", "Phenomena_Animotion"): {"images": {1: [{'copyas': 'Animotion'}] }},
+#("demos", "Thrust_Ottifanten"): {"images": {1: [{'copyas': 'Ottifanten'}] }},
+#("demos", "Thrust_Ottifanten2"): {"images": {1: [{'OttiImMoni'}] }},
+# maybe not the best idea
+
+#("demos", "Skarla_S"): {"images": {1: [{'seenat': 'ftp://ftp.aminet.net/demo/tp94', 'type': '.exe', 'file': 'Skarla.exe', 'copyas': 'SKARLA-40KIntro'}]}},
+#- !!! version linked in from whdload also doesn't work directly. but after unpacking with dexfd. i just don't want that special case
+#- !!! also only works with unpacking, grrrrr
+("demos", "CarillonCyberiad_MusRabbit"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/C/CarillonCyberiad', 'type': '', 'file': 'CNCD-MusicalRabbit', 'copyas': 'MusicalRabbit'}]}},
+
+#+
+("demos", "Mute101_Demo"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/M', 'type': '', 'file': 'MUTE101-Intro', 'copyas': 'MuteDemo'}]}},
+
+#- !!!unsupported
+("demos", "Defjam_BigBusiness"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/D/Defjam', 'type': '', 'file': 'Defjam-BigBusiness', 'copyas': 'BigBusiness'}]}},
+#- !!!unsupported, absolute cruncher
+("demos", "Fraxion_Highway1930"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/F/Fraxion', 'type': '', 'file': 'Fraxion-Highway1930', 'copyas': 'Highway1930'}]}},
+#- !!! file not supported, dexfd fails on it also due to absolute mode
+("demos", "Fraxion_CocaColaDemo"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/F/Fraxion', 'type': '', 'file': 'FRAXION-cocacola', 'copyas': 'CocaColaDemo'}]}},
+
+#+
+("demos", "Paradox_DrunkDesertDemo"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/P/Paradox', 'type': '', 'file': 'Paradox-TheDrunkDesert', 'copyas': 'DrunkDesert'}]}},
+#+
+("demos", "Arcane_ThePinkCircle"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/A/Arcane', 'type': '', 'file': 'ARCANE-ThePincCircle', 'copyas': 'ThePinkCircle'}]}},
+
+#-!!!unsupported, absolute
+("demos", "Silents_EndOfMaloy"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/S/Silents_The', 'type': '', 'file': 'SILENTS-EndOfMaloy', 'copyas': 'EndOfMaloy'}]}},
+#-!!!unsupported - maybe use P_XFDDecrunch xfd. isn't that a requirement of whdload anyway?
+("demos", "Rebels_DetKniber"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/R/Rebels', 'type': '', 'file': 'Rebels-DetKniber', 'copyas': 'DetKniber'}]}},
+
+#+
+("demos", "RamJam_CopperSlave"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/R/Ram_Jam', 'type': '', 'file': 'RAMJAM-CopperSlave', 'copyas': 'CopperSlave'}]}},
+#+
+("demos", "DMob_Route66"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/D/D-Mob', 'type': '', 'file': 'D_Mob-Route66', 'copyas': 'Route66'}]}},
+#+
+("demos", "Thrust_SunsetGlow"): {"images": {1: [{'seenat': 'http://ftp.amigascne.org/pub/amiga/Groups/T/Thrust', 'type': '', 'file': 'THRUST-Sunsetglow', 'copyas': 'Sunsetglow'}]}},
+
+("demos", "Complex_Origin"): {"images": {
+1: [{'seenat': 'ftp://ftp.funet.fi/pub/amiga/demos/Complex', 'type': '.dms', 'file': 'Complex.Origin-1.dms'}], 
+2: [{'seenat': 'ftp://ftp.funet.fi/pub/amiga/demos/Complex', 'type': '.dms', 'file': 'Complex.Origin-2.dms'}]}},
+
+
+#+ last line. as it has a different ending as the others, just leave it as the last.
+("demos", "Kefrens_DANE"): {"images": {1: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Kefrens", "type": ".dms", "file": "Kefrens.DANE.dms"}]}}
+}
+
+#("demos", "Alcatraz_DevilsKey"):{"images": 
+#{
+# 1: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Alcatraz", "type": ".dms", "file": "Alcatraz.MegademoIV-1a.dms"},{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Alcatraz", "type": ".dms", "file": "Alcatraz.MegademoIV-1b.dms"}],
+# 2: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Alcatraz", "type": ".dms", "file": "Alcatraz.MegademoIV-2a.dms"},{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Alcatraz", "type": ".dms", "file": "Alcatraz.MegademoIV-2b.dms"}],
+# 3: [{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Alcatraz", "type": ".dms", "file": "Alcatraz.MegademoIV-3a.dms"},{"seenat": "ftp://ftp.funet.fi/pub/amiga/demos/Alcatraz", "type": ".dms", "file": "Alcatraz.MegademoIV-3b.dms"}]
+#}
+#},
+
+# todo:
+# cebit 90 http://old-skool.net/downloaddemo.php3?id=54 http://old-skool.net
