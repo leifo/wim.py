@@ -26,23 +26,27 @@
 #          - made basename and name search lowercase
 # 22.10.13 - lowercase search for primary key in install()
 # 24.10.13 - v0.08, multiple disk install supported (desert dream works)
+#          - been ill in bed, working on netbook
 #          - v0.09, type switch, added "zip,adf", made Katakis work as the first game (16:43), also R-Type
 #          - seperated cache and temp dirs
 #          - log errors with references to entityname and added -e option to investigate error occurences
-
+# 25.10.13 - v0.10, been ill in bed, made cracktros work on my netbook 
+#          - this involved handling temporary install dir, searching for slaves, and adjusting paths as we go along
+#          -- checked all install archives if they come with directory ->>NO (see alienIII, carcharodon, cf, copper, hunt, etc.)
+#          - path stuff will be a good base for future additions. a worthy v0.1 :)
 
 # todo:
-#       - make ctros work
+#       - check why "pixel nation" does not install with adf
 #       - -x for execute option
 #       - parse allow in parserefscached from -a option
 
-#       - autodetect rawdic/dic install (find "(set #program "DIC")" , or "(set #program "RawDIC")" in install)
+#      b- autodetect rawdic/dic install (find "(set #program "DIC")" , or "(set #program "RawDIC")" in install)
 #       - make devils' key work (3 disk 6 dms does not work, found 3 disk 3 dms, still needs rawdic?)
 
 #       - seperate function for building stats
 #       - fix stats upon recreation
 
-#       - create dirs as needed, unpack there, support removing (otherwise no package manager)
+#      b- create dirs as needed, unpack there, support removing (otherwise no package manager)
 #       - make work with http://aminet.net/package/util/wb/whdautolaunch
 
 #       - fix error line 723 in cleanRefsCached (self.dh.countToDict(self.errors,"removed for missing images '%s'" % self.brain["prods"][name]["images"]))
@@ -52,7 +56,7 @@
 #       - make adf work
 
 
-#       - use md5 or other hash to verify and find disk images
+#    big- use md5 or other hash to verify and find disk images
 #       -- seen as in hash
 #       - help verify / install the right software (lha, lzx, rawdic, dic, patcher, installer, quite a list :)
 
@@ -65,6 +69,10 @@ try:
     import cPickle as pickle
 except:
     import pickle
+
+# import variables for file system handling
+from os import curdir, pardir, sep
+
 from lxo_helpers import dicthelpers,listhelpers
 
 
@@ -113,6 +121,52 @@ else:
 def q(cond, on_true, on_false):
     return {True: on_true, False: on_false}[cond is True]
 
+# build an absolute path from relative path and currentdir
+# return: (path, success)
+# path is empty if success == False
+def raPath(rel):
+    # get absolute path to current path and normalize relative path
+    apath = os.path.abspath(os.curdir)
+    rel = os.path.normpath(rel)
+
+    # check special cases "", "." and ".."
+    if rel == os.curdir: return apath, True
+    if rel == os.pardir:
+        h,t = os.path.split(apath)
+        if len(t)==0 or len(h)==0:
+            return "", False
+        return h, True
+
+    # should we go up first?
+    upat = os.pardir
+    up = rel.count(upat)
+    h = ""
+    if up>0:
+        # go up according to rel, chop rel
+        h = apath
+        for i in range(up):
+            h,t=os.path.split(h)
+            # remove first occurence of pat from path (if any)
+            pos = rel.find(upat)
+            if pos >=0: rel = rel[pos+len(upat):]
+            #print rel
+
+    # anything left of rel after this?
+    # we are done if not
+    if len(rel)==0:
+        if os.path.exists(h):
+            return h,True
+        else:
+            return "",False
+
+    # if we reached this, we have to go down into some other path now
+    #print "Debug: ", h, rel
+    combine = os.path.abspath(h+rel)
+    if os.path.exists(combine):
+        return combine, True
+    else:
+        return "", False
+
 class whdloadProxy:
 
     #url_all= "http://www.whdload.de/demos/all.html"
@@ -138,6 +192,9 @@ class whdloadProxy:
     debug=False
     verbose=False
     errors={}
+    
+    # needed to finding the slave in a subdir after unpacking slave lha
+    slavesfound=[]
     
     def __init__(self):
         t1=time.clock()
@@ -314,13 +371,32 @@ class whdloadProxy:
             # one disks first, start with dms
             
             # get basename
+            
+            # todo: geturl fuer php endungen
+            
             seenat, filename = os.path.split(hint)
             seenat = self.expandPlaceholders(seenat)
             if len(filename)==0:
-                self.dh.logValueToDict(self.errors,"no direct link", errorname)
-                if verbose:
-                    print "*** Warning: no direct link to: %s (%s)" % (prodname,hint)
-                return {}
+                # at this point it is unclear if we have a file (no known extension, could also be a directory)
+                # (e.g. ftp://ftp.amigascne.org/pub/amiga/Groups/P/Phenomena/PHENOMENA-Animotion)
+                # therefore investigate the link in seenat
+                if len(seenat)>0:
+                    sys.stdout.write ("%s, investigating '%s' .." % (prodname,seenat))
+                    h=urllib.urlopen(seenat)
+                    d=h.headers.dict
+                    if d.has_key("content-length"):
+                        cl=d["content-length"]
+                        ct=""
+                        if d.has_key("content-type"):
+                            ct=d["content-type"]
+                        sys.stdout.write("length: '%s', type: '%s'" % (cl,ct) )
+                    print   
+                else:
+                    # empty hint
+                    self.dh.logValueToDict(self.errors,"no direct link", errorname)
+                    if verbose:
+                        print "*** Warning: no direct link to: %s (%s)" % (prodname,hint)
+                    return {}
             # get suffix
             trash, ext = os.path.splitext(hint)
             ext=ext.lower()
@@ -487,7 +563,84 @@ class whdloadProxy:
         #self.parseIndexAll(recursive=recursive, debug=False)
         #self.parseIndexAllV(recursive=recursive, debug=False)
         self.parseRefsCached()
-          
+
+    def collection_helper(self, arg, dirname, names):
+        '''
+        os.path.walk helper for findSlaves. look there for more details.
+        '''
+        counter=0
+        print "  dir '%s' has %s files" % (dirname, len(names))
+        if dirname.endswith("cache"):
+            print "skipping cache"
+            return
+        for name in names:
+            #fullname = dirname+name
+            
+            propername = os.path.join(dirname, name)
+            fullname = propername
+            
+            #print "dir: '%s', name: '%s', fullname: '%s'" % (dirname,name,fullname)
+            #print "dir: '%s', name: '%s', fullname: -" % (dirname,name)
+            
+            if name.lower().endswith(arg.lower()):
+                #fullname = os.path.normpath( dirname + name )
+                #fullname = os.path.join(dirname, name)
+                #print name
+                #print fullname
+                #print "isFile: " + fullname + "("+dirname+"  "+name+")"
+                self.slavesfound.append(propername)
+            #if os.path.isdir(fullname):
+            #    #print "isDir: " + fullname + "("+dirname+"  "+name+")"
+            #    names.remove(name)
+        
+    
+    def findSlaveDir(self, dirname, debug=False):
+        '''
+        WHDLoad Install archives have no fixed directory structure.
+        If there is a dir, it might or might not be called like the archive or basename,
+        but might also have hd, -hd, -install, etc. attached, or not. 
+        Also there might be no directory in the archive (e.g. alien3 or carchrodon)
+        The only real given is that the slave ends in .slave. So that is what this function looks for.
+        Input> dirname
+        Output> adjusted dirname (where slave is contained)
+        '''
+        # get full absolute path from relative os.curdir 
+        (path,success)= raPath(dirname) # needed)
+        if not success:
+            print "Problem getting absolute path for dirname '%s'.\nStop." %dirname
+            sys.exit()
+
+        searchfor = ".slave"
+        if debug:
+            print "curdir: '%s', pardir: '%s', sep: '%s'" %(curdir, pardir,sep)
+        print "looking for '%s' files in '%s'" % (searchfor, path)
+
+        os.path.walk(dirname, self.collection_helper, searchfor)
+
+        for file in self.slavesfound:
+            #print "%s is file: %s" % (file, os.path.isfile(file))
+            pass
+            
+        if len(self.slavesfound)==0:
+            print "*** Error: no slave found in '%s'\nStop." % dirname
+            sys.exit()
+        
+        if len(self.slavesfound)>1:
+            print "*** Warning: more than one slave found in '%s'. Taking first one.\n%s" % (dirname,self.slavesfound)
+        
+        file = self.slavesfound[0]
+        self.slavesfound=[] # cleanup
+        
+        # double check it is actually a file
+        if not os.path.isfile(file):
+            print "*** Error: not a file '%s'\nStop." % file
+            sys.exit()
+        
+        # we are good. lets slice up the result and return the adjusted dir
+        print "Found %s" % file
+        head, tail = os.path.split(file)
+        return head
+        
     def install(self, searchname, debug=False, verbose=False):
         '''
         install a demo, getting all required linked images, etc
@@ -495,6 +648,25 @@ class whdloadProxy:
         returns True on success and False otherwise
         '''
         
+        # make a local copy to allow modifications
+        installdir = self.installdir
+        
+        # we work in our own subdir
+        tempwim = "temp-wim"
+        installdir = os.path.join(installdir, tempwim)
+        if self.isAmiga:
+            if not os.path.isdir(installdir):
+                # complain and create it
+                print "Creating my '%s' directory in %s" % (tempwim,self.installdir)
+                os.makedirs(installdir)
+            else:
+                # get rid of previous install junk / CAREFULL!!!
+                if installdir=="t:temp-wim":
+                    print "Cleaning install-dir '%s'" % installdir
+                    os.system('cd %s\ndelete #? all quiet' % installdir)
+                else:
+                    print "Better not delete %s" % installdir
+                    sys.exit()
         # find right entity
         # try 1: searchname is (category/basename)
         if self.brain["prods"].has_key(searchname):
@@ -574,7 +746,32 @@ class whdloadProxy:
         except:
             numdisks = 0
             pass
+
         # todo: seperate get file from installation handler
+    
+        # commands batch 1 (Amiga only), unpack installer
+        # unpack installer, with special case for "ctros"
+        iname = os.path.join(self.cachedir, data["install"])
+        # special case for ctros
+        if data["category"]=="ctros":
+            lhaline = "lha e -N %s %s/" % (iname , installdir)
+        else:
+            # common case for everything else: try to be clever about it
+            lhaline = "lha e -x0 -N %s #?.inf #?.slave #?README %s/" % (iname , installdir)
+        commands.append(lhaline)
+        print lhaline
+
+        # can only do preparation this on Amiga
+        if self.isAmiga:
+            for command in commands:
+                os.system(command)
+            commands=[]
+        
+            # find slave, adjust target-dir
+            dir=self.findSlaveDir(installdir)
+            if dir!=installdir:
+                print "Adjusting installdir to '%s'" % dir
+                installdir = dir
             
         category=data["category"]
         # iterate over disks
@@ -621,7 +818,10 @@ class whdloadProxy:
                     commands.append(dmsline)
 
                     # DIC produces Disk.1/2/3, etc.
-                    copyline = 'copy %s/%s to "t:Disk.%s"' %(self.tempdir, adfname,disknum)        
+                    diskname="Disk.%s" % disknum
+                    targetname = "%s" % (os.path.join(installdir,diskname))
+                    print targetname
+                    copyline = 'copy %s/%s to "%s" ' % (self.tempdir, adfname, targetname)        
                     commands.append(copyline)
                     
                 # handle zipped adf
@@ -635,7 +835,9 @@ class whdloadProxy:
                     commands.append("cd %s\n%s" % (self.tempdir,unzipline))
                     # copy adf to installdir
                     # later todo: special case "saveas" for images that need a special name
-                    copyline = 'copy %s/%s to "t:Disk.%s"' %(self.tempdir, adfname, disknum)        
+                    #copyline = 'copy %s/%s to "t:Disk.%s"' %(self.tempdir, adfname, disknum)
+                    copyline = 'copy %s/%s to "%s/Disk.%s"' %(self.tempdir, adfname, installdir, disknum)
+                    
                     commands.append(copyline)
                 
                 # handle adf
@@ -645,7 +847,7 @@ class whdloadProxy:
                     #adfnamefull = os.path.join(self.cachedir, adfname)
                     # copy adf to installdir
                     # later todo: special case "saveas" for images that need a special name
-                    copyline = 'copy %s to "t:Disk.%s"' %(fname, disknum)        
+                    copyline = 'copy %s to "%s/Disk.%s"' %(fname, installdir, disknum)        
                     commands.append(copyline)
 
         else:
@@ -654,34 +856,25 @@ class whdloadProxy:
             print "Stop."
             sys.exit()
                       
-        # unpack installer, with special case for "ctros"
-        iname = os.path.join(self.cachedir, data["install"])
-        #lhaline = "lha x -N %s %s" % (iname ,self.installdir)
-        lhaline = "lha e -x0 -N %s #?.inf #?.slave #?README %s" % (iname ,self.installdir)
-        #lhaline = "lha e -x0 -N %s #?.slave #?README %s" % (iname ,self.installdir) # no inf
-        commands.append(lhaline)
 
-        # ab hier wirds h?sslich hardcoded zum ende des tages :)
-        # hardcoded for Sanity
-        #commands.append('cd "t:NotAgain Install"')
-        
-        # moved into loop for multi-disk support
-        # DIC produces Disk.1
-        #copyline = 'copy %s/%s to "t:Disk.1"' %(self.cachedir, adfname)        
-        #commands.append(copyline)
         
         # get slave mit lha
         # echo noline "whdload "
         # lha lq -N %s #?.slave >> t:go
-        commands.append('echo ";1" >t:go')
-        commands.append('echo noline "whdload " >>t:go')
-        commands.append('lha lq -N %s #?.slave >> t:go' % iname)
-
-        #commands.append('cd "t:NotAgain Install/"')
-        #commands.append('rename "t:NotAgain.inf" "t:NotAgain.info"')
-        #commands.append('list "t:"')
-        commands.append('cd t:')
-        #commands.append('cd "t:"\nwhdload Notagain.slave')      
+        commands.append('echo ";1" >"%s"' % os.path.join(installdir,"go"))
+        commands.append('echo noline "whdload " >>"%s"' % os.path.join(installdir,"go"))
+        commands.append('lha lq -N %s #?.slave >>"%s"' % (iname, os.path.join(installdir,"go") ))
+        commands.append('cd "%s"\nlist' % installdir)
+        
+        # write extra go-file to t: if dir has been adjusted (mind the SELF here!)
+        if self.isAmiga:
+            if installdir != self.installdir:
+                content = ';1\ncd "%s"\nexecute go' % installdir
+                #print content
+                goname=os.path.join(self.installdir,"go")
+                h=open(goname, "w")
+                h.write(content)
+                h.close()
 
         # recap
         print "\n--> List of commands:"
@@ -796,7 +989,7 @@ class whdloadProxy:
                             path = category+"/"+install
                             url=urlparse.urljoin(self.url_whdload,path)
                             #url=os.path.join(self.url_whdload,category,install)
-                            #s= self.cacheGet(url)
+                            s= self.cacheGet(url)
                             #print "downloading: %s" %url
                                                
                             prodname = name
@@ -942,7 +1135,7 @@ def test2():
     self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.09, WHDLoad Install Manager by Leif Oppermann (20.10.2013)"
+print "Wim.py v0.10, WHDLoad Install Manager by Leif Oppermann (25.10.2013)"
 #print "  automates your WHDLoad installation chores"
 
 optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrse:')
