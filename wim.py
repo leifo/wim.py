@@ -16,6 +16,7 @@
 #          - checks for supported images and types before storing in brain (demos, games, ctros, apps, mags)
 #          - pickle instead of dict
 #          - renamed getKnownDemos to getKnownEntitites which takes in categories, e.g. games or demos
+# 19.10.13 - v0.06, added save format to brain as a dict with "prods" and "stats" etc.
 
 
 import os,sys,getopt,time
@@ -79,13 +80,9 @@ class whdloadWebProxyDemos:
     
     lastt = None
     
-    prods = {}  # results will go here
+    #prods = {}  # results will go here
+    brain = {}  # results will go here
     dh=None
-    
-    #dicts for stats, filled by parseRefs        
-    stat_category={}
-    stat_vendor={}
-    stat_iauthor={}
         
     def __init__(self):
         t1=time.clock()
@@ -147,7 +144,7 @@ class whdloadWebProxyDemos:
         #self.dh.saveDictionary(repr(self.prods),"brain.dict")
         print "***PICKLING"
         filehandle = open("brain.pickle","wb")
-        pickle.dump(self.prods, filehandle)
+        pickle.dump(self.brain, filehandle)
         filehandle.close()
         return
         
@@ -155,11 +152,16 @@ class whdloadWebProxyDemos:
         #self.prods=eval(self.dh.loadDictionary("brain.dict"))
         try:
             filehandle = open("brain.pickle","r")
-            self.prods = pickle.load(filehandle)
+            self.brain = pickle.load(filehandle)
             filehandle.close()
         except:
-            self.prods={}
-        
+            self.brain={}
+            self.brain["prods"]={}
+            self.brain["stats"]={}
+            #dicts for stats, filled by parseRefs, reachable from getStats()
+            self.brain["stats"]["category"]={}
+            self.brain["stats"]["vendor"]={}
+            self.brain["stats"]["iauthor"]={}
         #try:
         #    self.prods=dh.loadDictionary("wimpy.dict")
         #except:
@@ -254,7 +256,7 @@ class whdloadWebProxyDemos:
                     meta["install"]=install
                     meta["images"]=images
                     meta["infoparsed"]=False
-                    self.prods[prodname] = meta
+                    self.brain["prods"][prodname] = meta
                     
                 except:
                     print "***error at %s" % str(t)
@@ -410,7 +412,7 @@ class whdloadWebProxyDemos:
                         meta["install"]=install
                         meta["images"]=images
                         meta["infoparsed"]=False                        
-                        self.prods[prodname] = meta
+                        self.brain["prods"][prodname] = meta
                         
                         # debug
                         #if prodname=="Face Another Day":
@@ -430,7 +432,7 @@ class whdloadWebProxyDemos:
         '''
         if config["has_bs4"]==False:
             return
-        s = self.cacheGet(self.url_path + self.prods[demoname]["info"])
+        s = self.cacheGet(self.url_path + self.brain["prods"][demoname]["info"])
         # parse html
 
         if debug:
@@ -452,21 +454,21 @@ class whdloadWebProxyDemos:
         #print "found %d entries" % (len(tr))
         
         # mark as done
-        self.prods[demoname]["infoparsed"]=True
+        self.brain["prods"][demoname]["infoparsed"]=True
         return
     
     def hasDemo(self, demoname):
         '''
         Return True if demoname is known
         '''
-        return self.prods.has_key(demoname)
+        return self.brain["prods"].has_key(demoname)
     
     def getMeta(self, demoname, debug=False):
         if self.hasDemo(demoname):
-            if self.prods[demoname]["infoparsed"]==False:
+            if self.brain["prods"][demoname]["infoparsed"]==False:
                 # get details
                 self.parseInfo(demoname, debug)
-            return self.prods[demoname]
+            return self.brain["prods"][demoname]
         else:
             return None
     
@@ -478,9 +480,9 @@ class whdloadWebProxyDemos:
             p=True
         else:
             p=False
-        for prod in self.prods.keys():
-            if p or self.prods[prod]["category"]==category:
-                print "%s by %s" % (self.prods[prod]["prodname"], self.prods[prod]["vendor"])
+        for prod in self.brain["prods"].keys():
+            if p or self.brain["prods"][prod]["category"]==category:
+                print "%s by %s" % (self.brain["prods"][prod]["prodname"], self.brain["prods"][prod]["vendor"])
     def getStats(self):
         '''
         print some stats from parseRefs
@@ -490,7 +492,7 @@ class whdloadWebProxyDemos:
         self.stat_iauthor={}
 
         '''
-        print "Known categories: %s" % str(self.stat_category)
+        print "Known categories: %s" % str(self.brain["stats"]["category"])
         
     
     def buildTables(self, recursive=False, debug=False):
@@ -508,7 +510,7 @@ class whdloadWebProxyDemos:
         currently works with .dms 1 disk 1 image only
         returns True on success and False otherwise
         '''      
-        data = self.prods[demoname]
+        data = self.brain["prods"][demoname]
         print "---> Installing %s by %s" % (demoname, data["vendor"])
 
         commands=[] # these will be executed one after another on target system
@@ -786,11 +788,11 @@ class whdloadWebProxyDemos:
                             
                             # quick hack
                             if len(images)>0:
-                                self.prods[prodname] = meta
+                                self.brain["prods"][prodname] = meta
                                 # count some stats
-                                self.dh.countToDict(self.stat_category, category)
-                                self.dh.countToDict(self.stat_vendor, vendor)
-                                self.dh.countToDict(self.stat_iauthor, iauthor)
+                                self.dh.countToDict(self.brain["stats"]["category"], category)
+                                self.dh.countToDict(self.brain["stats"]["vendor"], vendor)
+                                self.dh.countToDict(self.brain["stats"]["iauthor"], iauthor)
                         
                             else:
                                 if debug:
@@ -808,13 +810,14 @@ class whdloadWebProxyDemos:
         if debug:
             print "\n\nnumcommentblocks: %d" % numcommentblocks
             #print "\nplaceholders= %s" % self.placeholder
-            print "\ncategories: %s" % self.stat_category
+            print "\ncategories: %s" % self.brain["stats"]["category"]
             #print "\nvendors: %s" % self.stat_vendor # could be used to list by group/vendor
             #print "\nimage authors: %s" % self.stat_iauthor
                 
 
-def test(demo,debug=False,verbose=False):
+def test(demo,debug=False,verbose=True):
     has = demos.hasDemo(demo)
+    print "has: %s" % has
     if debug:
         print "%s, %s" % (demo, has)
     if has:
@@ -828,7 +831,7 @@ def test2():
     self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.05, WHDLoad Install Manager by Leif Oppermann (19.10.2013)"
+print "Wim.py v0.06, WHDLoad Install Manager by Leif Oppermann (19.10.2013)"
 #print "  automates your WHDLoad installation chores"
 
 optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrt')
@@ -872,6 +875,10 @@ for o, a in optlist:
         #print "  install: %s" % a
         demos.getStats()
 
+    if o == "-i":
+        #print "  install: %s" % a
+        test(a,debug=False,verbose=False)
+        
     #    if o == "-c":
     #print "  capabilities are: 'urllib'-%s, 'bs4'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"))
 
