@@ -52,12 +52,20 @@
 # 10.11.13 - added old install archives as list to meta
 #          - added hashes for old slaves to meta (should it be tuples with md5 hash?)
 # 11.11.13 - slave-filename for go-file now based on what has been installed, rather than what was the name in original install archive (now works with scoopex_megademo, turrican, etc.)
+# 18.11.13 - added assigns, special-cased amiga-related bug in raPath
+#          - rearranged dirs, now uses tempdir and a "scratch" dir below thar
+#          - added managed dir and copied install to there, creating intermediate dirs like demos/ctros/mags/games on the way
+#          - support wildcard matching
+# 19.11.13 - skip already installed entitites
+
 
 # todo:
+#      b- create dirs as needed, unpack there, support removing (otherwise it is not a package manager)
+#       - don't fail if entityname in mandir already exists, rather quit out from that install process
 
+#       - progress-bar in window title on Amiga
 #       - add hashing creator to wim
 #       - decide on dict/pickle/zip storage mechanism for hashes
-#      b- create dirs as needed, unpack there, support removing (otherwise it is not a package manager)
 
 #       - make work with http://aminet.net/package/util/wb/whdautolaunch
 #       - move getoldinstalls to parseInfo / getMeta?
@@ -213,10 +221,12 @@ def q(cond, on_true, on_false):
 # build an absolute path from relative path and currentdir
 # return: (path, success)
 # path is empty if success == False
-def raPath(rel):
+def raPath(rel, debug=True):
     # get absolute path to current path and normalize relative path
     apath = os.path.abspath(os.curdir)
     rel = os.path.normpath(rel)
+    if debug:
+        print apath, rel
 
     # check special cases "", "." and ".."
     if rel == os.curdir: return apath, True
@@ -227,18 +237,23 @@ def raPath(rel):
         return h, True
 
     # should we go up first?
-    upat = os.pardir
-    up = rel.count(upat)
     h = ""
-    if up>0:
-        # go up according to rel, chop rel
-        h = apath
-        for i in range(up):
-            h,t=os.path.split(h)
-            # remove first occurence of pat from path (if any)
-            pos = rel.find(upat)
-            if pos >=0: rel = rel[pos+len(upat):]
-            #print rel
+    if os.pardir != os.sep:
+        # hack on 18.11.13 to make work on amiga
+        upat = os.pardir
+        up = rel.count(upat)
+        if up>0:
+            if debug:
+                print "going up: %s" % up
+            # go up according to rel, chop rel
+            h = apath
+            for i in range(up):
+                h,t=os.path.split(h)
+                # remove first occurence of pat from path (if any)
+                pos = rel.find(upat)
+                if pos >=0: rel = rel[pos+len(upat):]
+                if debug:
+                    print rel
 
     # anything left of rel after this?
     # we are done if not
@@ -252,9 +267,15 @@ def raPath(rel):
     #print "Debug: ", h, rel
     combine = os.path.abspath(h+rel)
     if os.path.exists(combine):
+        #print "*** Bamm"
+        #print rel, combine
         return combine, True
     else:
+        #print "*** Boom"
+        #print rel, combine
         return "", False
+
+from assigns import *
 
 class whdloadProxy:
 
@@ -268,8 +289,9 @@ class whdloadProxy:
 
     cachedir = "cache"
     #amidisk = "ff0:"
-    tempdir = "temp"
-    installdir = "t:"
+    tempdir = "progdir:temp"
+    systdir = "t:"
+    manageddir = "progdir:managed"
     isAmiga = -1
     
     lastt = None
@@ -300,6 +322,11 @@ class whdloadProxy:
             self.loadDict()
         t2=time.clock()
         print "done in %.2f seconds." % (t2-t1)
+        
+        # create t: replacement if not on Amiga
+        if not os.path.isdir(assign(self.systdir)):
+            self.systdir=self.tempdir
+            print "Not running on Amiga, assign t: to /tempdir"
 
     def setVariables(self, debug=False, verbose=False):
         '''
@@ -377,7 +404,7 @@ class whdloadProxy:
             except:
                 self.hashes=self.dh.loadDictionary("brain-hashes.dict")
             #self.dh.saveDictionary(self.hashes,"brain-hashes.dict")
-        print " loaded %s hashes" % len(self.hashes)
+        print " loaded %s hashes\n" % len(self.hashes)
         
     def loadDict(self):
         #self.prods=eval(self.dh.loadDictionary("brain.dict"))
@@ -904,6 +931,7 @@ class whdloadProxy:
         (path,success)= raPath(dirname) # needed)
         if not success:
             print "Problem getting absolute path for dirname '%s'.\nStop." %dirname
+            print dirname, path, success
             sys.exit()
 
         searchfor = ".slave"
@@ -951,7 +979,8 @@ class whdloadProxy:
             
         if len(self.slavesfound)==0:
             print "*** Error: no slave found in '%s'\nStop." % dirname
-            sys.exit()
+            return
+            #sys.exit()
         
         if len(self.slavesfound)>1:
             print "*** Warning: more than one slave found in '%s'. Taking first one.\n%s" % (dirname,self.slavesfound)
@@ -992,30 +1021,36 @@ class whdloadProxy:
             self.loadHashes()
             
         # make a local copy to allow modifications
-        installdir = self.installdir
+        installdir = assign(self.systdir)
         
         # we work in our own subdir
-        tempwim = "temp-wim"
+        tempwim = "scratch"
         installdir = os.path.join(installdir, tempwim)
         installdir_bak = installdir
         if self.isAmiga:
+            if debug:
+                print installdir
             if not os.path.isdir(installdir):
                 # complain and create it
-                print "Creating my '%s' directory in %s" % (tempwim,self.installdir)
+                print "Creating my '%s' directory in %s" % (tempwim,assign(self.tempdir))
                 os.makedirs(installdir)
             else:
                 # get rid of previous install junk / CAREFULL!!!
-                if installdir=="t:temp-wim" and self.isAmiga:
-                    print "Cleaning install-dir '%s'" % installdir
-                    os.system('cd %s\ndelete #? all quiet' % installdir)
+                if self.isAmiga:
+                    if len(os.listdir(installdir))>0:
+                        if verbose:
+                            print "Cleaning install-dir '%s'" % installdir
+                        os.system('cd %s\ndelete #? all quiet' % installdir)
                 else:
-                    if not self.isAmiga:
+                    if verbose:
                         print "Better not delete %s" % installdir
                     sys.exit()
+
         # find right entity
         # try 1: searchname is (category/basename)
         if self.brain["prods"].has_key(searchname):
-            print "Exact match on primary key: %s" % searchname
+            if verbose:
+                print "Exact match on primary key: %s" % searchname
             entityname = searchname
         
         else:
@@ -1026,7 +1061,8 @@ class whdloadProxy:
             for prod in prodnames:
                 if searchnamelow==prod.lower():
                     foundlower=True
-                    print "Match on primary key: %s" % searchname
+                    if verbose:
+                        print "Match on primary key: %s" % searchname
                     break
             if foundlower:
                 entityname=prod
@@ -1048,24 +1084,40 @@ class whdloadProxy:
                 # if 1 matched name, than that is the one
                 if len(matched_names)==1:
                     entityname=matched_names[0]
-                    print "Match on name: %s" % searchname
+                    if verbose:
+                        print "Match on name: %s" % searchname
 
                 elif len(matched_basenames)==1:
                     entityname=matched_basenames[0]
-                    print "Match on basename: %s" % searchname
+                    if verbose:
+                        print "Match on basename: %s" % searchname
 
                 else:
                     print "*** Error: your searchname '%s' yielded no exact match:" % searchname
                     print "on primary key: []"
                     print "on basenames: %s" % matched_basenames
                     print "on names: %s" % matched_names
-                    print "Stop."
+                    print "Stop.\n"
+                    return
                     sys.exit()             
         
         # at this point we know exactly what the user wants, i.e. the entityname
         data = self.brain["prods"][entityname]
-        print "\n---> Installing %s by %s (%s)" % (data["name"], data["vendor"], entityname)
-        print data
+        if verbose:
+            print "---> Installing %s by %s (%s)" % (data["name"], data["vendor"], entityname)
+            print data
+        else:
+            print "%s\n (%s by %s)" % (entityname, data["name"], data["vendor"])
+        
+        # check if this entity is already managed, i.e. a directory category/basename exists
+        mandir=assign(self.manageddir)
+        basename=data["basename"]
+        category=data["category"] 
+        proddir = os.path.join(category, basename)
+        destdir = os.path.join(mandir,proddir)
+        if os.path.isdir(destdir):
+            print " already exists, skipping"
+            return
         
         commands=[] # these will be executed one after another on target system
 
@@ -1088,7 +1140,8 @@ class whdloadProxy:
         # number of disks, "ctros" special case as has no images
         try:
             numdisks = len(images)
-            print "Number of disks: %d" % numdisks
+            if verbose:
+                print "Number of disks: %d" % numdisks
         except:
             numdisks = 0
             pass
@@ -1106,7 +1159,8 @@ class whdloadProxy:
             #lhaline = "lha e -x0 -N %s #?.inf install #?.slave #?README %s/" % (iname , installdir)
             lhaline = "lha e -N %s %s/" % (iname , installdir)
         commands.append(lhaline)
-        print lhaline
+        if debug:
+            print lhaline
 
         # can only do preparation for this on Amiga
         if self.isAmiga:
@@ -1146,6 +1200,8 @@ class whdloadProxy:
                 if debug: 
                     print image["seenat"],image["file"]
                 url = image["seenat"]+"/"+image["file"]
+                if len(image["file"])==0: # should not be required in the first place, but occured with Faster Than Hell on 18.11.
+                    break;
                 print "Downloading %s from %s" % (image["file"], url)
                 self.cacheGet(url)
                 
@@ -1157,7 +1213,7 @@ class whdloadProxy:
                     # http://zakalwe.fi/~shd/foss/xdms/xdms.txt
                     adfname = image["file"].lower().replace(image["type"],".adf")    #lower okay as Amiga filesystem is not case sensitive (error found with "r.o.m. 1" which has upper case .DMS)
                     adfnamefull = os.path.join(self.cachedir, adfname)
-                    dmsline = "xdms -d %s u %s +%s" % (self.tempdir, fname,adfname)
+                    dmsline = "xdms -d %s u %s +%s" % (assign(self.tempdir), fname,adfname)
                     if debug:
                         print "Creating %s from %s" %(adfnamefull, fname)
                         
@@ -1168,7 +1224,7 @@ class whdloadProxy:
                     diskname="Disk.%s" % disknum
                     targetname = "%s" % (os.path.join(installdir,diskname))
                     print targetname
-                    copyline = 'copy %s/%s to "%s" ' % (self.tempdir, adfname, targetname)        
+                    copyline = 'copy %s/%s to "%s" ' % (assign(self.tempdir), adfname, targetname)        
                     commands.append(copyline)
                     
                 # handle zipped adf
@@ -1179,11 +1235,11 @@ class whdloadProxy:
                     # -jo for overwrite -no for keeping
                     unzipline = "unzip -jo %s %s" % ( "/%s" % (fname) , adfname)
                     # step into tempdir and unzip
-                    commands.append("cd %s\n%s" % (self.tempdir,unzipline))
+                    commands.append("cd %s\n%s" % (assign(self.tempdir),unzipline))
                     # copy adf to installdir
                     # later todo: special case "saveas" for images that need a special name
-                    #copyline = 'copy %s/%s to "t:Disk.%s"' %(self.tempdir, adfname, disknum)
-                    copyline = 'copy %s/%s to "%s/Disk.%s"' %(self.tempdir, adfname, installdir, disknum)
+                    #copyline = 'copy %s/%s to "t:Disk.%s"' %(assign(self.tempdir), adfname, disknum)
+                    copyline = 'copy %s/%s to "%s/Disk.%s"' %(assign(self.tempdir), adfname, installdir, disknum)
                     
                     commands.append(copyline)
                 
@@ -1214,12 +1270,13 @@ class whdloadProxy:
             if hashing == False:
                 if len(hashes)>0:
                     print "*** Info: There is a known hash"
-                print "*** Error: no images found!"
+                print "*** Warning: no images found!"
                 print "Stop."
-                sys.exit()
+                return
+                #sys.exit()
             else:
                 # try hashing
-                print "\n*** Info: searching via hashes (have %s)" % len(hashes)
+                print "*** Info: searching via hashes (have %s)" % len(hashes)
                 c=1
                 foundHashRoute=False
                 bestroute=None
@@ -1234,9 +1291,10 @@ class whdloadProxy:
                             beststeps=len(route)
                             bestroute=route
                 if not foundHashRoute:                
-                    print "*** Error: no hash found a route"
-                    print "Stop."
-                    sys.exit()
+                    print "*** Warning: no hash found a route"
+                    #print "Stop."
+                    #sys.exit()
+                    return
             # here we have a hash route
             level=0
             steps = len(bestroute)
@@ -1249,15 +1307,16 @@ class whdloadProxy:
             commands=[]
             installdir = installdir_bak
             # get rid of previous install junk / CAREFULL!!!
-            if installdir=="t:temp-wim" and self.isAmiga:
-                print "Cleaning install-dir '%s'" % installdir
-                os.system('cd %s\ndelete #? all quiet' % installdir)
+            #if installdir=="t:temp-wim" and self.isAmiga:
+            if self.isAmiga:
+                if len(os.listdir(installdir))>0:
+                    if verbose:
+                        print "Cleaning install-dir '%s'" % installdir
+                    os.system('cd %s\ndelete #? all quiet' % installdir)
             else:
-                if self.isAmiga:
-                    print "\nBetter not delete %s" % installdir
-                else:
-                    print "\nNot running on Amiga.\nStop."
-                sys.exit()
+                print "\nNot running on Amiga.\nStop."
+                #sys.exit()
+                return
             print bestroute
             # unpack with 3 steps
             arc="archive:kg/packs"  ## hacked - todo
@@ -1286,11 +1345,14 @@ class whdloadProxy:
             commands = []
             
             # find slave, adjust target-dir
-            dir=self.findSlaveDir(self.installdir,hashing=hashing)
+            dir=self.findSlaveDir(assign(self.systdir),hashing=hashing)
             if dir!=installdir:
                 print "Adjusting installdir to '%s'" % dir
                 installdir = dir
-        
+        if not self.isAmiga:
+            print "*** Warning: Not running on Amiga, but installation commands are Amiga OS specific. (Run the same script inside Amiga.)"
+            print "Stop."
+            return  
         # get slave mit lha
         # echo noline "whdload "
         # lha lq -N %s #?.slave >> t:go
@@ -1307,7 +1369,8 @@ class whdloadProxy:
             commands.append('echo ";1" >"%s"' % os.path.join(installdir,"go"))
             # whdload options
             commands.append('echo noline "whdload preload splashdelay=50 quitkey=69 " >>"%s"' % os.path.join(installdir,"go"))
-            slavefile = self.findSlave(self.installdir, hashing=hashing)
+            slavefile = self.findSlave(assign(self.systdir), hashing=hashing)
+            #print slavefile # lha not unpacked on PC
             head, tail = os.path.split(slavefile)
             commands.append('echo "%s" >>"%s"' % (tail, os.path.join(installdir,"go") ))
             commands.append('echo "fix" >>"%s"' % os.path.join(installdir,"go"))  # to fix display issues that sometimes occur
@@ -1318,12 +1381,12 @@ class whdloadProxy:
         # commands.append('cd %s' %(installdir) ) # don't know how to do renaming of #?.inf to #?.info with AmigaOS, do in Python
         commands.append('cd "%s"\nlist' % installdir)
         
-        # write extra go-file to t: if dir has been adjusted (mind the SELF here!)
+        # write extra go-file to tempdir if dir has been adjusted (mind the SELF here!)
         if self.isAmiga:
-            if installdir != self.installdir:
+            if installdir != assign(self.tempdir):
                 content = ';1\ncd "%s"\nexecute go\n' % installdir
                 #print content
-                goname=os.path.join(self.installdir,"go")
+                goname=os.path.join(assign(self.systdir),"go")
                 h=open(goname, "w")
                 h.write(content)
                 h.close()
@@ -1339,10 +1402,39 @@ class whdloadProxy:
            print "*** Warning: Not running on Amiga, but installation commands are Amiga OS specific. (Run the same script inside Amiga.)"
            print "Stop."
            return
-
+           
+        # perform action
         for command in commands:
             os.system(command)
             
+        # move to managed dir
+        if debug:
+            print "\nlet's move"
+        # 1 - print this dir
+        if debug:
+            print installdir
+        # 2 - print managed dir
+        mandir=assign(self.manageddir)
+        if debug:
+            print mandir
+        
+        # print entitityname
+        basename=data["basename"] # not sure why this was required, but it contained "vision_megademo" otherwise
+        if debug:
+            print category, basename
+        # 3 - copy stuff over
+        import shutil
+        proddir = os.path.join(category, basename)
+        destdir = os.path.join(mandir,proddir)
+        catdir = os.path.join(mandir,category)
+        if not os.path.isdir(catdir):
+                # only happens on first occasion of demos/mags/ctros/games
+                if verbose:
+                    print "Creating '%s'" % (catdir)
+                os.makedirs(catdir)
+        shutil.copytree(installdir, destdir )
+        # 4 only install if basename not in manageddir (done earlier in install)
+        # 5 (add remove option)
         
         return
     
@@ -1747,13 +1839,33 @@ def test(demo,debug=False,verbose=True,hashing=False):
         print "  %s" % demos.getMeta(demo, debug=debug)
     # try to install
     demos.install(demo, debug=debug, verbose=verbose,hashing=hashing)
+
+def testwild(demo,debug=False,verbose=True,hashing=False):
+    # attempt to implement wildcard matching for installs as in http://docs.python.org/2/library/fnmatch.html
+    print
+    if verbose:
+        print "  %s" % demos.getMeta(demo, debug=debug)
+
+    if demo.find("*")==-1:
+        # no wildcard
+        demos.install(demo, debug=debug, verbose=verbose,hashing=hashing)
+    else:
+        # with wildcard
+        import fnmatch
+        entities=demos.brain["prods"].keys()
+        for entity in entities:
+            if fnmatch.fnmatch(entity, demo):
+                #print entity
+                # try to install
+                demos.install(entity, debug=False, verbose=False, hashing=hashing)
+                print 
         
 def test2():
     self.parseRefsCached()
     self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.21, WHDLoad Install Manager by Noname (11.11.2013)"
+print "Wim.py v0.22, WHDLoad Install Manager by Noname (19.11.2013)"
 
 optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrse:h')
 if len(optlist)==0:
@@ -1901,7 +2013,7 @@ if have_l:
 
 if have_i:
     #print "\n---> Installing"
-    test(a,debug=False,verbose=False,hashing=have_h)
+    testwild(a,debug=False,verbose=False,hashing=have_h)
 
 #print demos.brain
 
