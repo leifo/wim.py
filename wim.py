@@ -22,9 +22,9 @@
 #         - setVariables() for debug and verbose stats, linked to -v option
 #          - stats of failure sources in buildimagesmeta. check with "wim.py -rvc"
 #          - changed primarykey from str(name) to str((category, basename)), uncovering lots of megademos
-#          - improved install() do be more clever with searchname matching (e.g. Arte, Sanity_Arte, ('demos', 'Sanity_Arte')) all pass, and Megademo lists matching megademos
+#          - improved install do be more clever with searchname matching (e.g. Arte, Sanity_Arte, ('demos', 'Sanity_Arte')) all pass, and Megademo lists matching megademos
 #          - made basename and name search lowercase
-# 22.10.13 - lowercase search for primary key in install()
+# 22.10.13 - lowercase search for primary key in install
 # 24.10.13 - v0.08, multiple disk install supported (desert dream works)
 #          - been ill in bed, working on netbook
 #          - v0.09, type switch, added "zip,adf", made Katakis work as the first game (16:43), also R-Type
@@ -42,6 +42,12 @@
 #          - fixed cleanRefsCached so it doesn't loose cached data but only touches "prods" and "stats" -> makes -rc fast again
 #          - supported new types ".exe" and ""
 #          - added small help
+# 01.11.13 - v0.12, added hashing proof-of-concept for working with zipped install packs, found a route for games/Unreal
+# 02.11.13 - v0.2, lhafile and hashing added
+#            installing via hash worked with unreal,
+#            turrican would work too, but has two slaves, onw for game, the other for install
+#            lha line does not work well for hashed install, also afterburner89
+#            jaguarxj220 - no hash found a route - support old installs as well
 
 
 # interesting specimen to evolve wim
@@ -53,6 +59,16 @@
 # big business: absolute decrunching not supported / wrong file
 
 # todo:
+
+#       - identify correct slave for go-file based on hash matched from the archive? (turrican has install.slave and turrican.slave)
+#       -- many preinstalled prods like scoopex_megademo have a different name for the slave
+#       -- or just find the .slave that finally made it to self.installdir?
+
+#       - -h should not try to install from images first (e.g. megaforce_megademo)
+#       - work out unzip from subdir as in powerdrive from final_installs
+
+#      b- consider http://trac.edgewall.org/wiki/PySqlite instead of dict for speed 
+
 #      !- make animotion et al. work
 #       - play around with xfddecrunch and one of the unsupported demos, maybe try an installer first?
 
@@ -129,6 +145,7 @@
 # immediate blitter option makes old demos look as intendend (exception absoluteine cubes after exploding planet)
 
 import os,sys,getopt,time
+import md5
 try:
     import cPickle as pickle
 except:
@@ -139,6 +156,10 @@ from os import curdir, pardir, sep
 
 from lxo_helpers import dicthelpers,listhelpers
 
+try:
+    import lhafile
+except:
+    pass
 
 # handle 3 key differences between Win32 2.7 and Amiga Python 2.0
 config = {}
@@ -161,7 +182,7 @@ have_r=False
 have_s=False
 have_i=False
 have_e=False
-
+have_h=False
 try:
     from bs4 import BeautifulSoup
     config["has_bs4"]=True
@@ -256,6 +277,7 @@ class whdloadProxy:
     debug=False
     verbose=False
     errors={}
+    hashes={}
     
     # needed to finding the slave in a subdir after unpacking slave lha
     slavesfound=[]
@@ -341,6 +363,17 @@ class whdloadProxy:
 
 
         return
+    
+    def loadHashes(self):
+        if self.hashes=={}:
+            try:
+                filehandle = open("brain-hashes.pickle","r")
+                self.hashes = pickle.load(filehandle)
+                filehandle.close()
+            except:
+                self.hashes=self.dh.loadDictionary("brain-hashes.dict")
+            #self.dh.saveDictionary(self.hashes,"brain-hashes.dict")
+        print " loaded %s hashes" % len(self.hashes)
         
     def loadDict(self):
         #self.prods=eval(self.dh.loadDictionary("brain.dict"))
@@ -827,8 +860,33 @@ class whdloadProxy:
             #    #print "isDir: " + fullname + "("+dirname+"  "+name+")"
             #    names.remove(name)
         
-    
-    def findSlaveDir(self, dirname, debug=False):
+    def findHashRoute(self, md5hash):
+        '''
+        try to work out unpack route based on md5hash of this install
+        !only works with hashing enabled!
+        return list of steps
+        '''
+        if not self.hashes.has_key(md5hash):
+            return []
+
+        # step through list of known sightings and find route to top-file
+        listhashes = self.hashes[md5hash]
+        #print listhashes
+        route=[]
+        sight=listhashes[0]
+        while sight["type"]!="f":
+            print sight
+            route.append(sight)
+            sightlist=self.hashes[sight["in"]]
+            #print sightlist
+            sight=sightlist[0]
+        print sight
+        route.append(sight)
+        #print "*** Info: route"
+        #print route
+        return route
+                
+    def findSlaveDir(self, dirname, debug=False, hashing=False):
         '''
         WHDLoad Install archives have no fixed directory structure.
         If there is a dir, it might or might not be called like the archive or basename,
@@ -851,8 +909,40 @@ class whdloadProxy:
 
         os.path.walk(dirname, self.collection_helper, searchfor)
 
+        # hacked hashing in here, could be seperated later
         for file in self.slavesfound:
-            #print "%s is file: %s" % (file, os.path.isfile(file))
+            if hashing:
+                print "%s is file: %s" % (file, os.path.isfile(file))
+                #lets hash it
+                s=open(file,"rb").read()
+                m = md5.new()
+                m.update(s)
+                md5hash = m.hexdigest()
+                print md5hash
+                #print self.hashes[md5hash]["type"]
+                self.findHashRoute(md5hash)
+                ## step through list of known sightings and find route to top-file
+                #listhashes = self.hashes[md5hash]
+                ##print listhashes
+                #sight=listhashes[0]
+                #while sight["type"]!="f":
+                #    print sight
+                #    route.append(sight)
+                #    sightlist=self.hashes[sight["in"]]
+                #    #print sightlist
+                #    sight=sightlist[0]
+                #print sight
+                #route.append(sight)
+                #print "*** Info: route"
+                #print route
+                #level=0
+                #steps = len(route)
+                #print "\n***Info: Found a route with %s steps" % steps
+                #for i in range(steps):
+                #    step = route.pop()
+                #    sys.stdout.write(" "*i)
+                #    print step["filename"]
+                #print "\n"
             pass
             
         if len(self.slavesfound)==0:
@@ -875,19 +965,22 @@ class whdloadProxy:
         head, tail = os.path.split(file)
         return head
         
-    def install(self, searchname, debug=False, verbose=False):
+    def install(self, searchname, debug=False, verbose=False, hashing=False):
         '''
         install a demo, getting all required linked images, etc
         currently works with .dms 1 disk 1 image only
         returns True on success and False otherwise
         '''
-        
+        if hashing and len(self.hashes)==0:
+            self.loadHashes()
+            
         # make a local copy to allow modifications
         installdir = self.installdir
         
         # we work in our own subdir
         tempwim = "temp-wim"
         installdir = os.path.join(installdir, tempwim)
+        installdir_bak = installdir
         if self.isAmiga:
             if not os.path.isdir(installdir):
                 # complain and create it
@@ -953,7 +1046,7 @@ class whdloadProxy:
         
         # at this point we know exactly what the user wants, i.e. the entityname
         data = self.brain["prods"][entityname]
-        print "---> Installing %s by %s (%s)" % (data["name"], data["vendor"], entityname)
+        print "\n---> Installing %s by %s (%s)" % (data["name"], data["vendor"], entityname)
         print data
         
         commands=[] # these will be executed one after another on target system
@@ -971,6 +1064,7 @@ class whdloadProxy:
 'images': {1: [{'seenat': 'http://www.aminet.net/demo/mega', 'type': '.dms', 'file': 'notagain.dms'}]}}
 '''
         images = data["images"]
+        hashes = data["md5"]
         if debug:
             print images
         # number of disks, "ctros" special case as has no images
@@ -996,14 +1090,14 @@ class whdloadProxy:
         commands.append(lhaline)
         print lhaline
 
-        # can only do preparation this on Amiga
+        # can only do preparation for this on Amiga
         if self.isAmiga:
             for command in commands:
                 os.system(command)
             commands=[]
         
             # find slave, adjust target-dir
-            dir=self.findSlaveDir(installdir)
+            dir=self.findSlaveDir(installdir,hashing=hashing)
             if dir!=installdir:
                 print "Adjusting installdir to '%s'" % dir
                 installdir = dir
@@ -1097,12 +1191,78 @@ class whdloadProxy:
 
 
         else:
-            print "*** Info: Data==%s " % data
-            print "*** Error: no images found!"
-            print "Stop."
-            sys.exit()
-                      
-
+            #print "*** Info: Data==%s " % data
+            route=[]
+            if hashing == False:
+                if len(hashes)>0:
+                    print "*** Info: There is a known hash"
+                print "*** Error: no images found!"
+                print "Stop."
+                sys.exit()
+            else:
+                # try hashing
+                print "\n*** Info: searching via hashes (have %s)" % len(hashes)
+                c=1
+                found=False
+                for h in hashes:
+                    print "Try hash %s: %s" %(c,h)
+                    c=c+1
+                    route=self.findHashRoute(h)
+                    if len(route)>0:
+                        found=True
+                if not found:                
+                    print "*** Error: no hash found a route"
+                    print "Stop."
+                    sys.exit()
+            # here we have a hash route
+            level=0
+            steps = len(route)
+            print "\n*** Info: Found a route with %s steps" % steps
+            for i in range(steps):
+                step = route[steps-1-i]
+                sys.stdout.write(" "*i)
+                print step["filename"]
+            # empty unnecessary commands from images method
+            commands=[]
+            installdir = installdir_bak
+            # get rid of previous install junk / CAREFULL!!!
+            if installdir=="t:temp-wim":
+                print "Cleaning install-dir '%s'" % installdir
+                os.system('cd %s\ndelete #? all quiet' % installdir)
+            else:
+                print "Better not delete %s" % installdir
+                sys.exit()
+            print route
+            # unpack with 3 steps
+            arc="archive:kg/packs"  ## hacked - todo
+            if steps==3:
+                print route
+                zip1=route[2]["filename"] # pack
+                zip2=route[1]["filename"] # archive
+                step3line = "unzip -o %s %s" % ( '"%s/%s"' % ( (arc,zip1)),  zip2 )
+                # step into tempdir and unzip zip from containing pack
+                commands.append("cd %s\n%s" % (installdir,step3line) )
+                # now unzip the extracted archive
+                unzipline = "unzip -o %s" % ( zip2 )
+                commands.append("cd %s\n%s" % (installdir,unzipline) )
+            # unpack with 2 steps
+            
+            if not self.isAmiga:
+                print "*** Warning: Not running on Amiga, but installation commands are Amiga OS specific. (Run the same script inside Amiga.)"
+                print "Stop."
+                print commands
+                return
+            print commands
+            # unzip it
+            for command in commands:
+                os.system(command)
+            commands = []
+            
+            # find slave, adjust target-dir
+            dir=self.findSlaveDir(self.installdir,hashing=hashing)
+            if dir!=installdir:
+                print "Adjusting installdir to '%s'" % dir
+                installdir = dir
         
         # get slave mit lha
         # echo noline "whdload "
@@ -1146,12 +1306,12 @@ class whdloadProxy:
         
         return
     
-    def parseRefsCached(self,allow=["demos","ctros","mags","apps","games"]):
+    def parseRefsCached(self,debug=False, verbose=False, allow=["demos","ctros","mags","apps","games"], hashing=False):
         s = self.cacheGet(self.url_refs)
-        self.parseRefs(s,allow=allow,debug=False)
+        self.parseRefs(s,allow=allow,debug=False, verbose=verbose, hashing=hashing)
         self.saveDict()
 
-    def parseRefs(self, string, debug=False, verbose=False, allow=["demos","ctros","mags","apps"]):
+    def parseRefs(self, string, debug=False, verbose=False, allow=["demos","ctros","mags","apps"], hashing=False):
         lines = string.splitlines()
         
         iscommentblocks=False       # True while scanning comment lines
@@ -1246,7 +1406,7 @@ class whdloadProxy:
                             path = category+"/"+install
                             url=urlparse.urljoin(self.url_whdload,path)
                             #url=os.path.join(self.url_whdload,category,install)
-                            s= self.cacheGet(url)
+                            s= self.cacheGet(url)                                   # got cached lha
                             #print "downloading: %s" %url
                                                
                             prodname = name
@@ -1303,20 +1463,51 @@ class whdloadProxy:
                                     meta["images"]=None
                             touchedimages=False
                             
+                            # hash slave if hashing enables
+                            hashlist= []
+                            if hashing:
+                                # check and open lha (using http://trac.neotitans.net/wiki/lhafile)
+                                lhafilename = os.path.join("cache", install)
+                                if lhafile.is_lhafile(lhafilename):
+                                    f = lhafile.Lhafile(lhafilename)
+                                    # find slave filenames
+                                    flist = []
+                                    for name in f.namelist():
+                                        if name.lower().endswith(".slave"):
+                                            flist.append(name)
+                                    # hash them all
+                                    if len(flist) >0:
+                                        if verbose:
+                                            print flist
+                                        for slavename in flist:
+                                            #s=open((os.path.join(pathname,filename)),"rb").read()
+                                            m = md5.new()
+                                            m.update(f.read(slavename))
+                                            hashlist.append(m.hexdigest())
+                                        if verbose:
+                                            print " %s" % hashlist   
+                                    else:
+                                        if verbose:
+                                            print "- no slave found for %s" % install
+                                      
+                                    
+                                    # save to seperate dict
+                            meta["md5"]=hashlist
+                            
                             #if name=="Arte":
                             #    print meta
                             if has_corrections and debug:
                                 print meta
                                 print
-                            
-                            has_corrections=False   # reset for next loop
-                                                       
+                                
+                            # store this entry and prepare for next loop
                             self.brain["prods"][primary] = meta
                             # count some stats (todo: avoid double counting -> seperate function)
                             self.dh.countToDict(self.brain["stats"]["category"], category)
                             self.dh.countToDict(self.brain["stats"]["vendor"], vendor)
                             self.dh.countToDict(self.brain["stats"]["iauthor"], iauthor)
-                        
+                            has_corrections=False   # reset for next loop
+
                             # save precious debugging time by reducing turn around with lots of http connections
                             if debug:
                                 self.saveDict()
@@ -1341,7 +1532,7 @@ class whdloadProxy:
             #print "\nvendors: %s" % self.stat_vendor # could be used to list by group/vendor
             #print "\nimage authors: %s" % self.stat_iauthor
                 
-    def cleanRefsCached(self, debug=True,verbose=False):
+    def cleanRefsCached(self, debug=True,verbose=False,hashing=False):
         '''
         removes all entities without images, recalc stas and saves the brain-file
         '''
@@ -1359,7 +1550,9 @@ class whdloadProxy:
                 
         for name in self.brain["prods"]:
             #print self.brain["prods"][name]
-            if len( str(self.brain["prods"][name]["images"]) )>2:
+            #print name
+            #if len( str(self.brain["prods"][name]["images"]) )>2 or name=="games/Unreal" or (hashing and len(self.brain["prods"][name]["md5"])>0):
+            if len( str(self.brain["prods"][name]["images"]) )>2 or (hashing and len(self.brain["prods"][name]["md5"])>0):
                 # quick check okay, i.e. more than "{}"
                 # copy over entry
                 #print "keep %s" % name
@@ -1397,7 +1590,7 @@ class whdloadProxy:
         self.saveDict()
         
 
-def test(demo,debug=False,verbose=True):
+def test(demo,debug=False,verbose=True,hashing=False):
     #has = demos.hasDemo(demo)
     #print "has: %s" % has
     print
@@ -1407,16 +1600,16 @@ def test(demo,debug=False,verbose=True):
     if verbose:
         print "  %s" % demos.getMeta(demo, debug=debug)
     # try to install
-    demos.install(demo, debug=debug, verbose=verbose)
+    demos.install(demo, debug=debug, verbose=verbose,hashing=hashing)
         
 def test2():
     self.parseRefsCached()
     self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.11, WHDLoad Install Manager by Leif Oppermann (27.10.2013)"
+print "Wim.py v0.2, WHDLoad Install Manager by Noname (03.11.2013)"
 
-optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrse:')
+optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrse:h')
 if len(optlist)==0:
     print "  automates your WHDLoad installation chores"
     print 
@@ -1426,6 +1619,7 @@ if len(optlist)==0:
     print "  -s  stats"
     print "  -e  investigate exceptions"
     print "  -v  be verbose (lots of output)"
+    print "  -h  hashing"
     print
     print "  -l: list categories (: means supply argument, e.g. demos,ctros,games)"
     print
@@ -1469,6 +1663,10 @@ for o, a in optlist:
         #print "  parseRefs()"
         have_r=True
         #demos.parseRefsCached()
+
+    if o== "-h":
+        print " hashing enabled"
+        have_h=True
 
     if o== "-c":
         #print "  cleanRefs()"
@@ -1521,7 +1719,7 @@ for o, a in optlist:
 errorsloaded=False
 if have_r:
     print "\n---> Parsing References"
-    demos.parseRefsCached()
+    demos.parseRefsCached(verbose=g_verbose, hashing=have_h)
     errorsloaded=True
 if have_b:
     print "\n---> Building Tables"
@@ -1534,7 +1732,7 @@ if have_c:
     if not errorsloaded:
         demos.loadErrors()
     print "\n---> Cleaning"
-    demos.cleanRefsCached()
+    demos.cleanRefsCached(hashing=have_h)
 
 if have_s:
     if not errorsloaded:
@@ -1557,7 +1755,7 @@ if have_l:
 
 if have_i:
     #print "\n---> Installing"
-    test(a,debug=False,verbose=False)
+    test(a,debug=False,verbose=False,hashing=have_h)
 
 #print demos.brain
 
