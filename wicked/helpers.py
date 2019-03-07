@@ -1,5 +1,5 @@
 # common helpers
-# lxo 2006-2008
+# lxo 2006-2008, 2016
 
 class dicthelpers:
     # returns dictionary from given file
@@ -127,3 +127,28 @@ class normalizer:
             return self.min
         else:
             return float(value - self.min)/self.range
+
+# from http://stackoverflow.com/questions/2208828/detect-64bit-os-windows-in-python
+def is_os_64bit():
+    return platform.machine().endswith('64')
+
+def getPlatformString():
+    # try to build a platform string that can be used to call correspondingly named tools in \bin
+    # returns: win32 (on any Windows), darwin-powerpc (on my PPC 10.4), amiga (on any Amiga)
+    # linux2: i686 for centrino 32 bit laptop, x86_64 for desktop
+    # todo: check darwin-intel string and name tools accordingly (i386)
+    # sys.platform: amiga, darwin, win32
+    # platform.processor: amiga (n.a.), darwin (powerpc), win32 (disregard as too much detail)
+    import sys
+    plat = sys.platform
+    if  plat == "win32":
+        return plat
+
+    if  plat == "amiga":
+        return plat
+
+    import platform
+    cpu = platform.processor()
+    s = "%s-%s" %(plat, cpu)
+    return s
+
