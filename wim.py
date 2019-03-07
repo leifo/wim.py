@@ -1,3 +1,4 @@
+#!python
 #!/usr/bin/env python
 # 10.10.13 - first test on WHDLoad Installer with BeautifulSoup HTML parsing
 # 12.10.13 - v0.02, second version, put into class, cacheGet, build tables from all.html, hasDemo, getMeta
@@ -56,27 +57,36 @@
 #          - rearranged dirs, now uses tempdir and a "scratch" dir below thar
 #          - added managed dir and copied install to there, creating intermediate dirs like demos/ctros/mags/games on the way
 #          - support wildcard matching
-# 19.11.13 - skip already installed entitites
+# 19.11.13 - skip already installed entitites, made lots of print optional (verbose)
+#          - v0.23, changed hashing to use files with base64 url-friendly encode filenames in brain/hashes
+# 20.11.13 - v0.3, added remove option, package manager complete
+#          - added -f force option, for wildcard install and remove (otherwise overview only)
+# 23.11.13 - fixed cacheGet with a cachedir parameter to allow working with other dirs (e.g. temp) as well
+#          - (changed Amiga unzip from 5.1d3 to 5.42 - hope this fixes the freezing)
 
 
+# probs mit rampage demo: cache hit, da rampage.lha ein game-install ist, und nicht das image der demo
 # todo:
-#      b- create dirs as needed, unpack there, support removing (otherwise it is not a package manager)
-#       - don't fail if entityname in mandir already exists, rather quit out from that install process
+#       - load list of names and wildcards from file, merge with existing installbase
+#       - make rampage (adf in lha with renaming) work (same for electrons, turricandemo, turrican2demo)
+#       - -u update option to inject newer slaves into existing dirs (also rollback?)
+# - THE KRYSTAL ausprobieren :)
+#
+#       - remove should also delete read-only stuff like that mags/alpha*
+#       -- os.chmod(path, mode), import stat
+#       -- stat.S_IWRITE
 
-#       - progress-bar in window title on Amiga
+#       - -h should not try to install from images first (e.g. megaforce_megademo)
 #       - add hashing creator to wim
+#       - integrate hash bulding into building index (-bh options)
+
+#       - progress-bar in window title on Amiga?
 #       - decide on dict/pickle/zip storage mechanism for hashes
 
 #       - make work with http://aminet.net/package/util/wb/whdautolaunch
 #       - move getoldinstalls to parseInfo / getMeta?
-#       - more hashes to zip for faster loading
- 
-
-#       - -h should not try to install from images first (e.g. megaforce_megademo)
-#       - work out unzip from subdir as in powerdrive from final_installs
 
 #      b- consider http://trac.edgewall.org/wiki/PySqlite instead of dict for speed 
-
 
 #      b- autodetect rawdic/dic install (find "(set #program "DIC")" , or "(set #program "RawDIC")" in install)
 #        -- hinge of set #version in standard whdload install script (dic 2, rawdic 0, patcher 1, files 3, cd 4,  single file 5, arcadia 6)
@@ -93,13 +103,10 @@
 # check extension, wayfarer, dos, origin, odyssey
 #       - play around with xfddecrunch and one of the unsupported demos, maybe try an installer first?
 
-
-
 #        -- locate install script in archive/extrated dir
 #        -- reuse that code to locate *.inf for renaming to *.info        
         
 #       - make sure chuck rock and the other games disappear from list
-#       - make rampage (adf in lha with renaming) work
 
 #       - investigatelinkforcontent or buildimagesmeta: analyse first four bytes for amiga exe header 000003f3 when extension is ""
 
@@ -156,7 +163,7 @@
 # immediate blitter option makes old demos look as intendend (exception absoluteine cubes after exploding planet)
 
 import os,sys,getopt,time
-import md5
+import md5, base64
 try:
     import cPickle as pickle
 except:
@@ -194,6 +201,7 @@ have_s=False
 have_i=False
 have_e=False
 have_h=False
+have_f=False
 try:
     from bs4 import BeautifulSoup
     import re
@@ -303,7 +311,7 @@ class whdloadProxy:
     debug=False
     verbose=False
     errors={}
-    hashes={}
+    #hashes={} # !!!
     
     # needed to finding the slave in a subdir after unpacking slave lha
     slavesfound=[]
@@ -395,16 +403,17 @@ class whdloadProxy:
 
         return
     
-    def loadHashes(self):
-        if self.hashes=={}:
-            try:
-                filehandle = open("brain-hashes.pickle","r")
-                self.hashes = pickle.load(filehandle)
-                filehandle.close()
-            except:
-                self.hashes=self.dh.loadDictionary("brain-hashes.dict")
-            #self.dh.saveDictionary(self.hashes,"brain-hashes.dict")
-        print " loaded %s hashes\n" % len(self.hashes)
+#!!!
+#    def loadHashes(self):
+#        if self.hashes=={}:
+#            try:
+#                filehandle = open("brain-hashes.pickle","r")
+#                self.hashes = pickle.load(filehandle)
+#                filehandle.close()
+#            except:
+#                self.hashes=self.dh.loadDictionary("brain-hashes.dict")
+#            #self.dh.saveDictionary(self.hashes,"brain-hashes.dict")
+#        print " loaded %s hashes\n" % len(self.hashes)
         
     def loadDict(self):
         #self.prods=eval(self.dh.loadDictionary("brain.dict"))
@@ -443,7 +452,7 @@ class whdloadProxy:
         '''
         self.errors=eval(self.dh.loadDictionary("errors.dict"))
         
-    def cacheGet(self, url):
+    def cacheGet(self, url, cachedir=cachedir):
         '''
         Gets content from a URL and drops a copy in cachedir. Will use content from the cached file from then on.
         
@@ -455,7 +464,7 @@ class whdloadProxy:
                
         # get basename (last component) and construct local filename
         basename = os.path.basename(url)
-        filename = os.path.join(self.cachedir,basename)
+        filename = os.path.join(cachedir,basename)
         
         # strategy 1: try getting a cached copy and return
         if os.path.exists(filename):
@@ -467,10 +476,13 @@ class whdloadProxy:
                 return content
             
         # strategy 2: try getting the url, drop a cached binary copy, and return the content
-        content = urllib.urlopen(url).read()
-        savefile = open(filename, "wb")
-        savefile.write(content)
-        savefile.close()
+        try:
+            content = urllib.urlopen(url).read()
+            savefile = open(filename, "wb")
+            savefile.write(content)
+            savefile.close()
+        except:
+            content=""
                 
         return content    
     
@@ -593,7 +605,7 @@ class whdloadProxy:
         self.dh.logValueToDict(self.errors,"content", url)
         return True, True # content ok, connection ok! (we want more of this :)
         
-    def buildImagesMeta(self, prodname, hint, debug=False, verbose=False, allow=[".dms",".adf","", ".exe"], primary=None):
+    def buildImagesMeta(self, prodname, hint, debug=False, verbose=False, allow=[".dms",".adf","", ".exe", ".lha"], primary=None):
         '''
         consume non deterministic pointer to images and try to be clever about it
         input: last entry from the line from the list of installs
@@ -862,12 +874,13 @@ class whdloadProxy:
         #self.parseIndexAllV(recursive=recursive, debug=False)
         self.parseRefsCached()
 
-    def collection_helper(self, arg, dirname, names):
+    def collection_helper(self, arg, dirname, names, debug=False):
         '''
         os.path.walk helper for findSlaves. look there for more details.
         '''
         counter=0
-        print "  dir '%s' has %s files" % (dirname, len(names))
+        if debug:
+            print "  dir '%s' has %s files" % (dirname, len(names))
         if dirname.endswith("cache"):
             print "skipping cache"
             return
@@ -890,28 +903,63 @@ class whdloadProxy:
             #if os.path.isdir(fullname):
             #    #print "isDir: " + fullname + "("+dirname+"  "+name+")"
             #    names.remove(name)
+    
+    def haveHash(self, md5hash):
+        '''
+        return True/False if md5hash is known
+        '''
+        res=False
+        #res=self.hashes.has_key(md5hash)
+        hashdir = os.path.join("brain","hashes")
+        filename = os.path.join(hashdir,md5hash)
+        #print filename
+        res=os.path.isfile(filename)
+        #print res
+        return res
+   
+    def getHash(self, md5hash):
+        '''
+        return value for key md5hash or None
+        '''
+        #print "**********"
+        if not self.haveHash(md5hash):
+            return None
+            
+        hashdir = os.path.join("brain","hashes")
+        filename = os.path.join(hashdir,md5hash)
+        #print filename
+        s=open(filename).read()
+        #print s
+        return eval(s)
         
-    def findHashRoute(self, md5hash):
+        
+    def findHashRoute(self, md5hash, debug=False):
         '''
         try to work out unpack route based on md5hash of this install
         !only works with hashing enabled!
         return list of steps
         '''
-        if not self.hashes.has_key(md5hash):
+        #if not self.hashes.has_key(md5hash):
+        if not self.haveHash(md5hash):
             return []
 
         # step through list of known sightings and find route to top-file
-        listhashes = self.hashes[md5hash]
+        #listhashes = self.hashes[md5hash] #!!!
+        #print "***LEIF"
+        listhashes = self.getHash(md5hash)
         #print listhashes
         route=[]
         sight=listhashes[0]
+        if debug:
+            print listhashes
         while sight["type"]!="f":
-            print sight
+            #print sight
             route.append(sight)
-            sightlist=self.hashes[sight["in"]]
+            #sightlist=self.hashes[sight["in"]] # !!!
+            sightlist=self.getHash(sight["in"])
             #print sightlist
             sight=sightlist[0]
-        print sight
+        #print sight
         route.append(sight)
         #print "*** Info: route"
         #print route
@@ -944,13 +992,22 @@ class whdloadProxy:
         # hacked hashing in here, could be seperated later
         for file in self.slavesfound:
             if hashing:
-                print "%s is file: %s" % (file, os.path.isfile(file))
+                if debug:
+                    print "%s is file: %s" % (file, os.path.isfile(file))
                 #lets hash it
                 s=open(file,"rb").read()
                 m = md5.new()
                 m.update(s)
-                md5hash = m.hexdigest()
-                print md5hash
+                
+                #md5hash = m.hexdigest()                
+                #md5hash= base64.urlsafe_b64encode(m.digest())
+                # make urlsafe on amiga without b64encode according to http://pymotw.com/2/base64/
+                t1 = base64.encodestring(m.digest())
+                t2 = t1.replace("/","_")
+                md5hash = t2.replace("+","-")                
+                
+                if debug:
+                    print md5hash
                 #print self.hashes[md5hash]["type"]
                 self.findHashRoute(md5hash)
                 ## step through list of known sightings and find route to top-file
@@ -1008,17 +1065,128 @@ class whdloadProxy:
         Output> adjusted dirname (where slave is contained)
         '''
         file = self.findSlave(dirname=dirname, debug=debug, hashing=hashing)
-        head, tail = os.path.split(file)
-        return head
+        if file!=None:
+            head, tail = os.path.split(file)
+            return head
+        else:
+            return None
         
+    def isManaged(self, entityname, debug=False):
+        '''
+        returns True is entityname is managed, i.e. a directory exists
+        '''    
+        mandir=assign(self.manageddir)
+        if debug:
+            print mandir
+        
+        category, basename = entityname.split("/")
+        if debug:
+            print category, basename
+
+        proddir = os.path.join(category, basename)
+        destdir = os.path.join(mandir,proddir)
+        if debug:
+            print proddir, destdir
+        if os.path.isdir(destdir):
+            return True
+        else:
+            return False
+
+    def removeinstall(self, searchname, debug=False, verbose=False, hashing=False):
+        '''
+        remove the entity that matches searchname from manageddir
+        '''
+        #print searchname
+        # find right entity
+        # try 1: searchname is (category/basename)
+        if self.brain["prods"].has_key(searchname):
+            if verbose:
+                print "Exact match on primary key: %s" % searchname
+            entityname = searchname
+        
+        else:
+            # try : allow capitalization typos, i.e. check lower case
+            prodnames=self.brain["prods"].keys()
+            foundlower=False
+            searchnamelow = searchname.lower()
+            for prod in prodnames:
+                if searchnamelow==prod.lower():
+                    foundlower=True
+                    if verbose:
+                        print "Match on primary key: %s" % searchname
+                    break
+            if foundlower:
+                entityname=prod
+            else:
+                # try 3: searchname is basename or name (make sure there is no more than one, as in "Megademo")
+                searchnamelow=searchname.lower()
+                matched_basenames = []
+                matched_names=[]
+                for key in self.brain["prods"].keys():
+                    prod = self.brain["prods"][key]
+                    basename = prod["basename"].lower()
+                    name = prod["name"].lower()
+                    if searchnamelow==basename:
+                        matched_basenames.append(key)
+                    if searchnamelow==name:
+                        matched_names.append(key)
+                # check results
+                
+                # if 1 matched name, than that is the one
+                if len(matched_names)==1:
+                    entityname=matched_names[0]
+                    if verbose:
+                        print "Match on name: %s" % searchname
+
+                elif len(matched_basenames)==1:
+                    entityname=matched_basenames[0]
+                    if verbose:
+                        print "Match on basename: %s" % searchname
+
+                else:
+                    print "*** Error: your searchname '%s' yielded no exact match:" % searchname
+                    print "on primary key: []"
+                    print "on basenames: %s" % matched_basenames
+                    print "on names: %s" % matched_names
+                    print "Stop.\n"
+                    return
+                    sys.exit()             
+        
+        # at this point we know exactly what the user wants, i.e. the entityname
+        if debug:
+            print entityname
+
+        mandir=assign(self.manageddir)
+        if debug:
+            print mandir
+        
+        category, basename = entityname.split("/")
+        if debug:
+            print category, basename
+
+        proddir = os.path.join(category, basename)
+        destdir = os.path.join(mandir,proddir)
+        if debug:
+            print proddir, destdir
+        if os.path.isdir(destdir):
+            if verbose: 
+                sys.stdout.write(" removing '%s' ... " % entityname) #destdir
+            import shutil
+            shutil.rmtree(destdir, ignore_errors=True)
+            print "done."
+        else:
+            print "Hmm, no dir matched the entityname, what happened?"
+        return
+            
     def install(self, searchname, debug=False, verbose=False, hashing=False):
         '''
         install a demo, getting all required linked images, etc
         currently works with .dms 1 disk 1 image only
         returns True on success and False otherwise
         '''
-        if hashing and len(self.hashes)==0:
-            self.loadHashes()
+        #!!!
+        #if hashing and len(self.hashes)==0:
+        #    self.loadHashes()
             
         # make a local copy to allow modifications
         installdir = assign(self.systdir)
@@ -1032,7 +1200,8 @@ class whdloadProxy:
                 print installdir
             if not os.path.isdir(installdir):
                 # complain and create it
-                print "Creating my '%s' directory in %s" % (tempwim,assign(self.tempdir))
+                if verbose:
+                    print "Creating my '%s' directory in %s" % (tempwim,assign(self.tempdir))
                 os.makedirs(installdir)
             else:
                 # get rid of previous install junk / CAREFULL!!!
@@ -1040,7 +1209,7 @@ class whdloadProxy:
                     if len(os.listdir(installdir))>0:
                         if verbose:
                             print "Cleaning install-dir '%s'" % installdir
-                        os.system('cd %s\ndelete #? all quiet' % installdir)
+                        os.system('cd %s\ndelete #? all force quiet' % installdir)
                 else:
                     if verbose:
                         print "Better not delete %s" % installdir
@@ -1107,7 +1276,8 @@ class whdloadProxy:
             print "---> Installing %s by %s (%s)" % (data["name"], data["vendor"], entityname)
             print data
         else:
-            print "%s\n (%s by %s)" % (entityname, data["name"], data["vendor"])
+            #print "%s\n (%s by %s)" % (entityname, data["name"], data["vendor"])
+            print "%s" % (entityname)
         
         # check if this entity is already managed, i.e. a directory category/basename exists
         mandir=assign(self.manageddir)
@@ -1116,7 +1286,8 @@ class whdloadProxy:
         proddir = os.path.join(category, basename)
         destdir = os.path.join(mandir,proddir)
         if os.path.isdir(destdir):
-            print " already exists, skipping"
+            if verbose:
+                print " already exists, skipping"
             return
         
         commands=[] # these will be executed one after another on target system
@@ -1171,6 +1342,8 @@ class whdloadProxy:
             # find slave, adjust target-dir
             dir=self.findSlaveDir(installdir,hashing=hashing)
             if dir!=installdir:
+                if dir==None:
+                    return
                 print "Adjusting installdir to '%s'" % dir
                 installdir = dir
             
@@ -1189,7 +1362,7 @@ class whdloadProxy:
                 image = images[disknum][0]
                 
                 # check for dms
-                supportedtypes = (".dms", "zip,adf", ".adf", "", ".exe")
+                supportedtypes = (".dms", "zip,adf", ".adf", "", ".exe", ".lha")
                 type = image["type"]
                 if type not in supportedtypes:
                     print "*** Error: Can currently only handle %s, but this is of type '%s'" % (supportedtypes, type)
@@ -1203,21 +1376,22 @@ class whdloadProxy:
                 if len(image["file"])==0: # should not be required in the first place, but occured with Faster Than Hell on 18.11.
                     break;
                 print "Downloading %s from %s" % (image["file"], url)
-                self.cacheGet(url)
+                self.cacheGet(url, cachedir=assign(self.tempdir))
                 
                 # handle dms
                 if type==".dms":
                     # un-dms with system call
-                    fname = os.path.join(self.cachedir, image["file"])
+                    fname = os.path.join(assign(self.tempdir), image["file"])
                     #dmsline = "dms write %s to %s" % (fname, self.amidisk)
                     # http://zakalwe.fi/~shd/foss/xdms/xdms.txt
                     adfname = image["file"].lower().replace(image["type"],".adf")    #lower okay as Amiga filesystem is not case sensitive (error found with "r.o.m. 1" which has upper case .DMS)
-                    adfnamefull = os.path.join(self.cachedir, adfname)
+                    adfnamefull = os.path.join(assign(self.tempdir), adfname)
                     dmsline = "xdms -d %s u %s +%s" % (assign(self.tempdir), fname,adfname)
                     if debug:
                         print "Creating %s from %s" %(adfnamefull, fname)
                         
                     #os.system(dmsline)
+                    #print dmsline
                     commands.append(dmsline)
 
                     # DIC produces Disk.1/2/3, etc.
@@ -1233,7 +1407,7 @@ class whdloadProxy:
                     adfname = image["image"]
                     adfnamefull = os.path.join(self.cachedir, adfname)
                     # -jo for overwrite -no for keeping
-                    unzipline = "unzip -jo %s %s" % ( "/%s" % (fname) , adfname)
+                    unzipline = "unzip -jqo %s %s" % ( "/%s" % (fname) , adfname)
                     # step into tempdir and unzip
                     commands.append("cd %s\n%s" % (assign(self.tempdir),unzipline))
                     # copy adf to installdir
@@ -1262,6 +1436,20 @@ class whdloadProxy:
                     if image.has_key("copyas"):
                         renameline = 'cd %s\nrename "%s" "%s"' %(installdir, image["file"], image["copyas"])
                         commands.append(renameline)
+
+                # handle lha
+                if type==".lha":
+                    import lhafile
+                    print image
+                    lhafilename = os.path.join(assign(self.systdir), image["file"])
+                    print lhafilename
+                    if lhafile.is_lhafile(lhafilename):
+                        f = lhafile.Lhafile(lhafilename)
+                        flist = []
+                        print " listing %s:" % lhafilename
+                        for name in f.namelist():
+                            print name
+
 
 
         else:
@@ -1312,23 +1500,25 @@ class whdloadProxy:
                 if len(os.listdir(installdir))>0:
                     if verbose:
                         print "Cleaning install-dir '%s'" % installdir
-                    os.system('cd %s\ndelete #? all quiet' % installdir)
+                    os.system('cd %s\ndelete #? all force quiet' % installdir)
             else:
                 print "\nNot running on Amiga.\nStop."
                 #sys.exit()
                 return
-            print bestroute
+            if debug: # doppelt mit steps==3
+                print bestroute
             # unpack with 3 steps
             arc="archive:kg/packs"  ## hacked - todo
             if steps==3:
-                print bestroute
+                if debug:
+                    print bestroute
                 zip1=bestroute[2]["fullname"] # pack
                 zip2=bestroute[1]["fullname"] # archive
-                step3line = "unzip -o %s %s" % ( '"%s/%s"' % ( (arc,zip1)),  zip2 )
+                step3line = "unzip -qo %s %s" % ( '"%s/%s"' % ( (arc,zip1)),  zip2 )
                 # step into tempdir and unzip zip from containing pack
                 commands.append("cd %s\n%s" % (installdir,step3line) )
                 # now unzip the extracted archive
-                unzipline = "unzip -o %s" % ( zip2 )
+                unzipline = "unzip -qo %s" % ( zip2 )
                 commands.append("cd %s\n%s" % (installdir,unzipline) )
             # unpack with 2 steps
             # todo: implement
@@ -1338,7 +1528,8 @@ class whdloadProxy:
                 print "Stop."
                 print commands
                 return
-            print commands
+            if debug:
+                print commands
             # unzip it
             for command in commands:
                 os.system(command)
@@ -1347,6 +1538,8 @@ class whdloadProxy:
             # find slave, adjust target-dir
             dir=self.findSlaveDir(assign(self.systdir),hashing=hashing)
             if dir!=installdir:
+                if dir==None:
+                    return
                 print "Adjusting installdir to '%s'" % dir
                 installdir = dir
         if not self.isAmiga:
@@ -1368,7 +1561,7 @@ class whdloadProxy:
             # new method (use slave name that actually made it to installdir)
             commands.append('echo ";1" >"%s"' % os.path.join(installdir,"go"))
             # whdload options
-            commands.append('echo noline "whdload preload splashdelay=50 quitkey=69 " >>"%s"' % os.path.join(installdir,"go"))
+            commands.append('echo noline "whdload preload splashdelay=50 quitkey=69 nocache " >>"%s"' % os.path.join(installdir,"go"))
             slavefile = self.findSlave(assign(self.systdir), hashing=hashing)
             #print slavefile # lha not unpacked on PC
             head, tail = os.path.split(slavefile)
@@ -1379,7 +1572,7 @@ class whdloadProxy:
             
         # cleanup and show results
         # commands.append('cd %s' %(installdir) ) # don't know how to do renaming of #?.inf to #?.info with AmigaOS, do in Python
-        commands.append('cd "%s"\nlist' % installdir)
+        #commands.append('cd "%s"\nlist' % installdir)
         
         # write extra go-file to tempdir if dir has been adjusted (mind the SELF here!)
         if self.isAmiga:
@@ -1392,9 +1585,10 @@ class whdloadProxy:
                 h.close()
 
         # recap
-        print "\n--> List of commands:"
-        for command in commands:
-            print command
+        if debug:
+            print "\n--> List of commands:"
+            for command in commands:
+                print command
         
         # go (amiga only)
 #        print "\n--> Performing jobs"
@@ -1437,7 +1631,8 @@ class whdloadProxy:
         # 5 (add remove option)
         
         return
-    
+
+        
     def hashSlavesInLha(self, install, verbose= False):
         '''
         hash all possible slaves (could be install slaves) in install archive and return as list of md5 hashes
@@ -1460,7 +1655,9 @@ class whdloadProxy:
                     #s=open((os.path.join(pathname,filename)),"rb").read()
                     m = md5.new()
                     m.update(f.read(slavename))
-                    hashlist.append(m.hexdigest())
+                    #hashlist.append(m.hexdigest())
+                    hashlist.append(base64.urlsafe_b64encode(m.digest()))
+                    
                 if verbose:
                     print " %s" % hashlist   
             else:
@@ -1840,8 +2037,8 @@ def test(demo,debug=False,verbose=True,hashing=False):
     # try to install
     demos.install(demo, debug=debug, verbose=verbose,hashing=hashing)
 
-def testwild(demo,debug=False,verbose=True,hashing=False):
-    # attempt to implement wildcard matching for installs as in http://docs.python.org/2/library/fnmatch.html
+def installWild(demo,debug=False,verbose=True,hashing=False,force=False):
+    # implemented wildcard matching for installs as in http://docs.python.org/2/library/fnmatch.html
     print
     if verbose:
         print "  %s" % demos.getMeta(demo, debug=debug)
@@ -1853,26 +2050,74 @@ def testwild(demo,debug=False,verbose=True,hashing=False):
         # with wildcard
         import fnmatch
         entities=demos.brain["prods"].keys()
+        matched=[]
         for entity in entities:
             if fnmatch.fnmatch(entity, demo):
                 #print entity
                 # try to install
+                matched.append(entity)
+        # 
+        entities = len(matched)
+        print "Matched %s entities with '%s'" %(entities,demo)
+        if force:
+            count=1
+            for entity in matched:
+                sys.stdout.write("---> %s of %s (%.1f %%): " % (count, entities, float(count/float(entities)*100.0)))
+                count = count+1
                 demos.install(entity, debug=False, verbose=False, hashing=hashing)
-                print 
+        else:
+            for entity in matched:
+                print " %s" %entity
+            print "\nSupply -f option if you want to install all this (%s entities)." % entities
         
+def removeWild(demo,debug=False,verbose=True,hashing=False,force=False):
+    # attempt to implement wildcard matching for installs as in http://docs.python.org/2/library/fnmatch.html
+    if verbose:
+        print "  %s" % demos.getMeta(demo, debug=debug)
+
+    if demo.find("*")==-1:
+        # no wildcard
+        demos.removeinstall(demo, debug=debug, verbose=verbose,hashing=hashing)
+    else:
+        # with wildcard
+        import fnmatch
+        entities=demos.brain["prods"].keys()
+        matched=[]
+        for entity in entities:
+            if fnmatch.fnmatch(entity, demo):
+                #print entity
+                ismanaged=demos.isManaged(entity)
+                # check if dir exists
+                if ismanaged:
+                    matched.append(entity)
+        # 
+        entities = len(matched)
+        print "Matched %s entities with '%s'" %(entities,demo)
+        if force:
+            count=1
+            for entity in matched:
+                sys.stdout.write("---> removing %s of %s (%.1f %%): %s .. " % (count, entities, float(count/float(entities)*100.0), entity))
+                count = count+1
+                demos.removeinstall(entity, debug=False, verbose=False, hashing=hashing)
+        else:
+            for entity in matched:
+                print " %s" %entity
+            print "\nSupply -f option if you want to remove all this (%s entities)." % entities
+
+
 def test2():
     self.parseRefsCached()
     self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.22, WHDLoad Install Manager by Noname (19.11.2013)"
+print "Wim.py v0.3, WHDLoad Install Manager by Noname (20.11.2013)"
 
-optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrse:h')
+optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcr:se:hf')
 if len(optlist)==0:
     print "  automates your WHDLoad installation chores"
     print 
     print "Options:"
-    print "  -r  rebuild index"
+    print "  -b  build index"
     print "  -c  clean index"
     print "  -s  stats"
     print "  -e  investigate exceptions"
@@ -1881,33 +2126,39 @@ if len(optlist)==0:
     print
     print "  -l: list categories (: means supply argument, e.g. demos,ctros,games)"
     print
-    print "  -i: install (: argument could be name, basename or primary key, see below)"
+    print "  -i: install (: argument could be name, basename, primary key, or wildcard*, see below)"
+    print "  -r: remove (: argument could be name, basename, primary key, or wildcard*, see below)"
+    print "  -f  force (required to perform wildcard install or remove)"
     
     print "\nUsage: "
-    print "  python wim.py -rcs     (rebuild and clean index, show stats to begin with)"
-    print "  python wim.py -s       (show stats - works great in alternation with -e)"
-    print "  python wim.py -e .html (show entitites that had an exception while parsing"
+    print "  wim.py -bcs     (build and clean index, show stats to begin with)"
+    print "  wim.py -s       (show stats - works great in alternation with -e)"
+    print "  wim.py -e .html (show entitites that had an exception while parsing"
     print "                          because they linked to .html instead of actual file"
     print "                          - likewise with other exceptions as of stats)"
     print ""
-    print "  python wim.py -l demos (list all demos, likewise games, apps, mags, ctros)"
-    print "  python wim.py -i roots (install the demo Roots - matching on name)"
-    print "  python wim.py -i sanity_roots (same, but matching on basename)"
-    print "  python wim.py -i demos/sanity_roots (same, but matching on primary key)"
-    print "  python wim.py -i megademo (try this and feel the ambiguity of the word)"
-    print "  python wim.py -i digitech_megademo (install Digitech Megademo)"
-    print "  python wim.py -l ctros (list cracktros)"
-    print "  python wim.py -i swiv (install SWIV cracktro by Skid Row)"
-    print "  python wim.py -l games (list games)"
-    print "  python wim.py -i Katakis (install the game Katakis - matching on name)"
-    print "  python wim.py -i games/Katakis (same, but matching on primary key)"
+    print "  wim.py -l demos (list all demos, likewise games, apps, mags, ctros)"
+    print "  wim.py -i roots (install the demo Roots - matching on name)"
+    print "  wim.py -i sanity_roots (same, but matching on basename)"
+    print "  wim.py -i demos/sanity_roots (same, but matching on primary key)"
+    print "  wim.py -i megademo (try this and feel the ambiguity of the word)"
+    print "  wim.py -i digitech_megademo (install Digitech Megademo)"
+    print "  wim.py -i *megademo* (check everything with Megademo in it)"
+    print "  wim.py -fi *megademo* (actually install everything with Megademo in it)"
+    print "  wim.py -fr *megademo* (and remove everything with Megademo in it)"
+    print
+    print "  wim.py -l ctros (list cracktros)"
+    print "  wim.py -i swiv (install SWIV cracktro by Skid Row)"
+    print "  wim.py -l games (list games)"
+    print "  wim.py -i Katakis (install the game Katakis - matching on name)"
+    print "  wim.py -i games/Katakis (same, but matching on primary key)"
     print
     print "Note:"
     print "  wim.py currently only installs to a tempdir in 't:'"
     print "  It cleans that place prior to any install, so no need to do it by hand."
     print "  You don't have to manually cd there and find the right file to start."
     print "  Instead just issue the 'j' command, which auto-starts the last install!"
-    sys.exit()
+    #sys.exit()
  
 #print optlist, args       
 
@@ -1917,10 +2168,7 @@ demos = whdloadProxy()
 for o, a in optlist:
     print o, a
 
-    if o== "-r":
-        #print "  parseRefs()"
-        have_r=True
-        #demos.parseRefsCached()
+
 
     if o== "-h":
         print " hashing enabled"
@@ -1957,17 +2205,20 @@ for o, a in optlist:
     if o == "-b":
         #print "  build tables"
         have_b = True
+        
         #demos.buildTables(recursive=True)
         #sys.exit()
 
-    #if o == "-t":
-        ##print "  install: %s" % a
-        #demos.getStats()
+    if o == "-f":
+        have_f=True
 
     if o == "-i":
         have_i=True
-        #print "  install: %s" % a
-        #test(a,debug=False,verbose=False)
+        installname=a
+        
+    if o== "-r":
+        have_r=True
+        removename=a
         
     #    if o == "-c":
     #print "  capabilities are: 'urllib'-%s, 'bs4'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"))
@@ -1975,21 +2226,17 @@ for o, a in optlist:
 
 # execute actions
 errorsloaded=False
-if have_r:
-    print "\n---> Parsing References"
-    demos.parseRefsCached(verbose=g_verbose, hashing=have_h)
-    errorsloaded=True
 if have_b:
-    print "\n---> Building Tables"
-    demos.buildTables(recursive=True)
-    sys.exit()
+    print "\n---> Building Index"
+    demos.parseRefsCached(verbose=g_verbose, hashing=have_h)
+    #demos.buildTables(recursive=True)
+    errorsloaded=True
 
-#todo: whats the difference between r and b?
 
 if have_c:
     if not errorsloaded:
         demos.loadErrors()
-    print "\n---> Cleaning"
+    print "\n---> Cleaning Index"
     demos.cleanRefsCached(hashing=have_h)
 
 if have_s:
@@ -1999,7 +2246,7 @@ if have_s:
     demos.getStats()
     
 if have_e:
-    print "\n---> investigate parsing Exceptions"
+    print "\n---> Investigate parsing Exceptions"
     if not errorsloaded:
         demos.loadErrors()
     demos.getError(have_e_a)
@@ -2013,7 +2260,11 @@ if have_l:
 
 if have_i:
     #print "\n---> Installing"
-    testwild(a,debug=False,verbose=False,hashing=have_h)
+    installWild(installname,debug=False,verbose=False,hashing=have_h, force=have_f)
+
+if have_r:
+    removeWild(removename,debug=False,verbose=False,hashing=have_h, force=have_f)
+
 
 #print demos.brain
 
