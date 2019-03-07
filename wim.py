@@ -88,116 +88,15 @@
 #          - fixed hashing install to work on pc
 # 09.06.16 - fixed line encoding in parseRefs which caused the website /prods page to crash
 # 15.06.16 - identify installmethods
-
-
-# todo: clean rawdic install routes
-# todo: integrate hashing / hasher2.py
-# todo: .lha route
-# todo: .lzx route
-
-# probs mit rampage demo: cache hit, da rampage.lha ein game-install ist, und nicht das image der demo
-# todo:
-#       - add authors to list of issues
-#       - load list of names and wildcards from file, merge with existing installbase
-#       - make rampage (adf in lha with renaming) work (same for electrons, turricandemo, turrican2demo)
-#       - -u update option to inject newer slaves into existing dirs (also rollback?)
-# - THE KRYSTAL ausprobieren :)
-#
-#       - remove should also delete read-only stuff like that mags/alpha*
-#       -- os.chmod(path, mode), import stat
-#       -- stat.S_IWRITE
-
-#       - -h should not try to install from images first (e.g. megaforce_megademo)
-#       - add hashing creator to wim
-#       - integrate hash bulding into building index (-bh options)
-
-#       - progress-bar in window title on Amiga?
-#       - decide on dict/pickle/zip storage mechanism for hashes
-
-#       - make work with http://aminet.net/package/util/wb/whdautolaunch
-#       - move getoldinstalls to parseInfo / getMeta?
-
-#      b- consider http://trac.edgewall.org/wiki/PySqlite instead of dict for speed 
-
-#      b- autodetect rawdic/dic install (find "(set #program "DIC")" , or "(set #program "RawDIC")" in install)
-#        -- hinge of set #version in standard whdload install script
-#          (dic 2, rawdic 0, patcher 1, files 3, cd 4,  single file 5, arcadia 6)
-#        -- set #multiple-versions = "" for the moment, otherwise throw exceptions  
-#        -- APPNAME hidden in installer.info (filename may vary) / needed?
-#        - stats per entityname on version, multiple-version, etc
-#        - procedure P_MakeImages verwendet version als switch - ist sie immer gleich?
-#        -- name der images wird in ci_diskname gebaut, dann wird P_CreateImage aufgerufen
-#        - umbennungen, u.a. cocacolademo in newname und #sf_new_filename
-#        --> install script parser in python wird benoetigt !
-#        - P_CopySlave mit %s und #icon_slave
-#        - #dest
-
-# check extension, wayfarer, dos, origin, odyssey
-#       - play around with xfddecrunch and one of the unsupported demos, maybe try an installer first?
-
-#        -- locate install script in archive/extrated dir
-#        -- reuse that code to locate *.inf for renaming to *.info        
-
-#       - make sure chuck rock and the other games disappear from list
-
-#       - investigatelinkforcontent or buildimagesmeta:
-#         analyse first four bytes for amiga exe header 000003f3 when extension is ""
-
-#       - make adf work
-#       - check why "pixel nation" does not install with adf (got html response instead of dms in cache!)
-
-#       - rename #?.inf #?.info in Python or AmigaOS?
-#       - -x for execute option
-#       - parse allow in parserefscached from -a option
-
-#      b- modify rawdic to work as command-line tool
-#       - switch to allow using standard install-script (yuk)
-
-#       - seperate function for building stats
-#       - fix stats upon recreation
-
-#       - fix error line 723 in cleanRefsCached (self.dh.countToDict(self.errors,"removed for missing images '%s'"
-#         % self.brain["prods"][name]["images"]))
-#       - make lha work
-#       - make lzx work
-#       - add -f find or finger option like -i but no actions
-#       - provide means to investigate/list productions of a certain type
-
-
-#      b- write tool to facilitate editing the corrections
-#       -- could just be slurping correct urls and copyas, and then somehow process that into the stream of data?
-
-
-#      b- package up by integrating with dcd tools, go-parser, menu, etc.
-
-
-#       - devise way to deal with broken downloads 
-#       - investigate python lha depacking
-#         (e.g. http://trac.neotitans.net/wiki/lhafile or http://code.google.com/p/python-libarchive/)
-#       -- lhafile install: SET VS90COMNTOOLS=%VS100COMNTOOLS%,
-#          easy_install http://svn.neotitans.net/lhafile/ works on pc!
-#       - investigate compile / freeze options, as in http://effbot.org/zone/python-compile.htm
-
-#       - use md5 hashes to help verify / install the right software
-#         (lha, lzx, rawdic, dic, patcher, installer, xfdmaster quite a list :)
-
-# interesting specimen to evolve wim
-# pychedelic: has comma seperated direct links to lha data!
-# rampage: is "adf in lha" http://aminet.net/pub/aminet/demo/track/Rampage.lha
-# devils' key: 3 disk 6 dms does not work, found 3 disk 3 dms, still doesnt work although it is dic
-# s (skarla 40k intro): exe not accepted by slave (wrong file, packed?)
-# musical rabbit needs unpacking (xfd :)
-# big business: absolute decrunching not supported / wrong file
-# capitalpunishment, virtual karting: no hash finds a route (v0.21)
-# spreadpoint turrican music show (filecopy(5) and dexfd required)
-
-# what bugs me
-# -missing delays in hd load demos, e.g. absolute inebriation title pic, rink a dink first pic
-# -quitkey code must be given in decimal on commanline (69 instead of $45) on commandline (but not in tooltype)
-#  but cli based help (whdload w/o options) list them in hex and w/o preceeding $, e.g. 45. very confusing.
-
-# misc finds:
-# immediate blitter option makes old demos look as intendend (exception absoluteine cubes after exploding planet)
+# 01.07.16 - v0.43, specified "html.parser" for beautifulsoup
+# 10.07.16 - fixed some bugs in unlha occuring with pathnames reported as filename (e.g. "ProSIAK\" from demos/FlyingCows_ProSIAK)
+# // 1 yrs a break
+# 05.06.17 - v0.44, decided for dicts (no more pickle and anydbm), hashes and more now stored in /data, /packs renamed to /arc
+# 07.06.17 - v0.45, set up directories via config dict for whdloadProxy
+# 08.06.17 - v0.46, added -a option (hash archives), tinkered around with py2exe
+# 14.07.17 - v0.47, added -g option (wx gui, not implemented)
+# 22.02.18 - v0.5, added -u option (first working install update was games\Airball)
+# 23.02.18 - added progressBar to cache downloads
 
 import os, sys, getopt
 import md5, base64
@@ -211,8 +110,14 @@ except:
 # import variables for file system handling
 from os import curdir, pardir, sep
 
-import wicked.proxy.whdloadproxy
-from wicked.proxy.whdloadproxy import whdloadproxy  # (could lead to an abstract interface beyond whdload)
+import wicked.proxy.whdload
+from wicked.proxy.whdload import whdloadproxy  # (could lead to an abstract interface beyond whdload)
+from wicked.proxy.whdload import whdloadhasher
+
+# update code and these imports should go to whdload.py
+from wicked.io.joblist import joblist
+from wicked.io.lhajob import unlha, unlhaSingleFile
+from wicked.io.copyjob import copy
 
 # from wicked.helpers import dicthelpers,listhelpers
 
@@ -252,6 +157,17 @@ if sys.platform == "amiga":
 else:
     config["is_amiga"] = False
 
+# set up directories
+config["cachedir"]="data/cache"
+config["tempdir"]="temp"
+config["ramtempdir"]="t:\\"
+config["manageddir"]="managed"
+
+config["arcdir"]="arc"
+#config["arcdir"]="x:\\amiga\\kg\\packs"
+
+config["scratchdirsuffix"]="scratch"
+
 
 def q(cond, on_true, on_false):
     return {True: on_true, False: on_false}[cond is True]
@@ -261,6 +177,7 @@ def q(cond, on_true, on_false):
 g_debug = False
 g_verbose = False
 
+have_a = False
 have_b = False
 have_c = False
 have_l = False
@@ -270,6 +187,8 @@ have_i = False
 have_e = False
 have_h = False
 have_f = False
+have_g = False
+have_u = False
 try:
     from bs4 import BeautifulSoup
     import re
@@ -362,24 +281,24 @@ def test(demo, debug=False, verbose=True, hashing=False):
         print "%s, %s" % (demo, has)
     # if has:
     if verbose:
-        print "  %s" % demos.getMeta(demo, debug=debug)
+        print "  %s" % wimpy.getMeta(demo, debug=debug)
     # try to install
-    demos.install(demo, debug=debug, verbose=verbose, hashing=hashing)
+    wimpy.install(demo, debug=debug, verbose=verbose, hashing=hashing)
 
 
 def installWild(demo, debug=False, verbose=True, hashing=False, force=False):
     # implemented wildcard matching for installs as in http://docs.python.org/2/library/fnmatch.html
     print
     if verbose:
-        print "  %s" % demos.getMeta(demo, debug=debug)
+        print "  %s" % wimpy.getMeta(demo, debug=debug)
 
     if demo.find("*") == -1:
         # no wildcard in searchname
-        demos.install(demo, debug=debug, verbose=verbose, hashing=hashing)
+        wimpy.install(demo, debug=debug, verbose=verbose, hashing=hashing)
     else:
         # with wildcard
         import fnmatch
-        entities = demos.brain["prods"].keys()
+        entities = wimpy.brain["prods"].keys()
         matched = []
         for entity in entities:
             if fnmatch.fnmatch(entity, demo):
@@ -395,7 +314,9 @@ def installWild(demo, debug=False, verbose=True, hashing=False, force=False):
                 sys.stdout.write(
                     "\n---> %s of %s (%.1f %%): " % (count, entities, float(count / float(entities) * 100.0)))
                 count = count + 1
-                demos.install(entity, debug=False, verbose=False, hashing=hashing)
+                if count >= 222:
+                    pass
+                wimpy.install(entity, debug=False, verbose=False, hashing=hashing)
         else:
             for entity in matched:
                 print " %s" % entity
@@ -405,20 +326,20 @@ def installWild(demo, debug=False, verbose=True, hashing=False, force=False):
 def removeWild(demo, debug=False, verbose=True, hashing=False, force=False):
     # attempt to implement wildcard matching for installs as in http://docs.python.org/2/library/fnmatch.html
     if verbose:
-        print "  %s" % demos.getMeta(demo, debug=debug)
+        print "  %s" % wimpy.getMeta(demo, debug=debug)
 
     if demo.find("*") == -1:
         # no wildcard
-        demos.removeinstall(demo, debug=debug, verbose=verbose, hashing=hashing)
+        wimpy.removeinstall(demo, debug=debug, verbose=verbose, hashing=hashing)
     else:
         # with wildcard
         import fnmatch
-        entities = demos.brain["prods"].keys()
+        entities = wimpy.brain["prods"].keys()
         matched = []
         for entity in entities:
             if fnmatch.fnmatch(entity, demo):
                 # print entity
-                ismanaged = demos.isManaged(entity)
+                ismanaged = wimpy.isManaged(entity)
                 # check if dir exists
                 if ismanaged:
                     matched.append(entity)
@@ -431,12 +352,111 @@ def removeWild(demo, debug=False, verbose=True, hashing=False, force=False):
                 sys.stdout.write("---> removing %s of %s (%.1f %%): %s .. " % (
                     count, entities, float(count / float(entities) * 100.0), entity))
                 count = count + 1
-                demos.removeinstall(entity, debug=False, verbose=False, hashing=hashing)
+                wimpy.removeinstall(entity, debug=False, verbose=False, hashing=hashing)
         else:
             for entity in matched:
                 print " %s" % entity
             print "\nSupply -f option if you want to remove all this (%s entities)." % entities
 
+def updateDir(updatedir, debug=False, verbose=True, hashing=False, force=False):
+    #print "  checking: %s" % updatedir
+    results = wimpy.findSlaves(updatedir)
+    updatelist=[]
+    if len(results)==0:
+        print "***Warning: nothing to update. Stopping."
+        return
+    # todos:
+    # - check slave hash for updates (rely on getOldInstalls)
+    # -- get from dirname to correct dict-entry, then look into "md5" hashlist
+    # - require force argument if len(results)>1
+    for i in range(len(results)):
+        #print "len: %d" % len(result)
+        #print "%s: %d" % (results[i], hasher.isknownfilename(results[i]))
+        ha = hasher.md5hexfile(results[i])
+        known = False
+        # slow search this hash in brain["prods"]["md5"]list
+        for prod in wimpy.brain["prods"].keys():
+            #print prod
+            #print wimpy.brain["prods"][prod]
+            md5list = wimpy.brain["prods"][prod]["md5"]
+            #print md5list
+            #if len(md5list)<1:
+            #    print "***Warning: no hash for %s" % prod
+            versioncount = 0 # current version is first in list
+            # todo: !!! fix this current calculation
+            for m in md5list:   # returns tuple (install, slavearchivename, hash)
+                dev,nil,hash = m
+                if ha == hash:
+                    #print "gotcha in %s" % prod
+                    known = True
+                    break
+                versioncount = versioncount + 1
+            if known==True:
+                break
+        if versioncount !=0:
+            # update available
+            if known:
+                if versioncount==1:
+                    print "%s - %s - %s other version" % (results[i], ha, versioncount )
+                else:
+                    print "%s - %s - %s other versions" % (results[i], ha, versioncount)
+                updatelist.append((prod,results[i]))
+            else:
+                print "%s - %s - unknown slave" % (results[i], ha )
+                #print "%s" % (results[i])
+
+
+
+    # *maintain list of update-results
+    # *require -f if more than 1 result for update
+    # perform update:
+    # - find identical filenames in installed dir and archive
+    # - copy them over (this typically includes the readme/readme.info), consider not touching .info files for the moment
+    # - md5-copy the slave under the correct filename (required, see A10TankKiller.lha vs. KG install - different names)
+    count = len(updatelist)
+    okay2proceed=False
+    if (count>1):
+        if not force:
+            print "Found %d pending updates. Use -f (force) to process them all." % count
+        else:
+            print "Found %d pending updates." % count
+            okay2proceed=True
+    else:
+        if (count==1):
+            print "Found 1 pending update."
+            okay2proceed=True
+        else:
+            print "No known updates."
+
+    # quit out if more than one update found and no -f given, or if nothing to update
+    if (okay2proceed==False):
+        return
+    print "okay to proceed\n"
+
+    l=joblist("update list",True)
+
+    for tuple in updatelist:
+        prodname,localslavepath = tuple
+        print "Updating %s located at: %s" % (str(prodname), str(localslavepath))
+
+        prod = wimpy.brain["prods"][prodname]
+        #print prod
+
+        # get archive slave filename from top of list
+        md5tuple = prod["md5"][0]
+        #print md5tuple   # find that hash in prod["install"]
+        install = prod["install"]
+        #print install
+
+        # copy file (or files?) from archive to updatefile/dir
+        archivename, filename, md5 = md5tuple
+        fullarchivename = os.path.join(config["cachedir"], archivename)
+        #print u"  need to copy %s from %s to %s" %(str(filename), str(fullarchivename), str(localslavepath))
+        job = unlhaSingleFile(fullarchivename, filename, localslavepath, False)
+        job.execute()
+
+    #for i in wimpy.hashes.keys():
+    #    print wimpy.hashes[i]
 
 def test2():
     self.parseRefsCached()
@@ -444,25 +464,28 @@ def test2():
 
 
 # ---get the arguments
-print "Wim.py v0.42, WHDLoad Install Manager by Noname (08.06.2016)"
+print "Wim.py v0.5, WHDLoad Install Manager by Noname (22.02.2018)"
 
-optlist, args = getopt.getopt(sys.argv[1:], 'i:vl:bcr:se:hfw')
+optlist, args = getopt.getopt(sys.argv[1:], 'i:vl:abcr:se:hfwgu:')
 if len(optlist) == 0:
     print "  automates your WHDLoad installation chores"
     print
     print "Options:"
+    print "  -a  analyse archives"
     print "  -b  build index"
     print "  -c  clean index"
     print "  -s  stats"
     print "  -e  investigate exceptions"
     print "  -v  be verbose (lots of output)"
     print "  -h  hashing"
+    print "  -g  graphical user interface (wx)"
     print "  -w  web interface (browser)"
     print
     print "  -l: list categories (: means supply argument, e.g. demos,ctros,games)"
     print
     print "  -i: install (: argument could be name, basename, primary key, or wildcard*, see below)"
     print "  -r: remove (: argument could be name, basename, primary key, or wildcard*, see below)"
+    print "  -u: update (: argument is directory name)"
     print "  -f  force (required to perform wildcard install or remove)"
 
     print "\nUsage: "
@@ -498,7 +521,9 @@ if len(optlist) == 0:
 # print optlist, args
 
 # instantiate
-demos = whdloadproxy(config)
+wimpy = whdloadproxy(config)
+hasher= whdloadhasher(config)
+# todo: check for wim.ok()/.configok()
 
 for o, a in optlist:
     print o, a
@@ -520,8 +545,13 @@ for o, a in optlist:
         # stats: category, iauthor, vendor
         # noconnection: -
 
-        web2.setBrain(demos.getBrain())
+        web2.setBrain(wimpy.getBrain())
         web2.runwebui()
+        sys.exit()
+
+    if o == "-g":
+        have_g = True
+        from wicked.ui import wxgui
         sys.exit()
 
     if o == "-h":
@@ -554,7 +584,10 @@ for o, a in optlist:
         print "  be verbose"
         g_debug = True
         g_verbose = True
-        demos.setVariables(debug=g_debug, verbose=g_verbose)
+        wimpy.setVariables(debug=g_debug, verbose=g_verbose)
+
+    if o == "-a":
+        have_a = True
 
     if o == "-b":
         # print "  build tables"
@@ -574,40 +607,49 @@ for o, a in optlist:
         have_r = True
         removename = a
 
-        #    if o == "-c":
+    if o == "-u":
+        have_u = True
+        updatename = a
+
+            #    if o == "-c":
         # print "  capabilities are: 'urllib'-%s, 'bs4'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"))
 
 # execute actions
 errorsloaded = False
+
+if have_a:
+    print "\n---> Analysing archives"
+    hasher.hasharchives()
+
 if have_b:
     print "\n---> Building Index"
-    demos.parseRefsCached(verbose=g_verbose, hashing=have_h)
+    wimpy.parseRefsCached(verbose=g_verbose, hashing=have_h)
     # demos.buildTables(recursive=True)
     errorsloaded = True
 
 if have_c:
     if not errorsloaded:
-        demos.loadErrors()
+        wimpy.loadErrors()
     print "\n---> Cleaning Index"
-    demos.cleanRefsCached(hashing=have_h)
+    wimpy.cleanRefsCached(hashing=have_h)
 
 if have_s:
     if not errorsloaded:
-        demos.loadErrors()
+        wimpy.loadErrors()
     print "\n---> Stats"
-    demos.getStats()
+    wimpy.getStats()
 
 if have_e:
     print "\n---> Investigate parsing Exceptions"
     if not errorsloaded:
-        demos.loadErrors()
-    demos.getError(have_e_a)
+        wimpy.loadErrors()
+    wimpy.getError(have_e_a)
     print "Done."
     sys.exit()
 
 if have_l:
     print "\n---> List"
-    demos.getKnownEntities(a)
+    wimpy.getKnownEntities(a)
     sys.exit()
 
 if have_i:
@@ -617,43 +659,8 @@ if have_i:
 if have_r:
     removeWild(removename, debug=False, verbose=False, hashing=have_h, force=have_f)
 
+if have_u:
+    updateDir(updatename, debug=False, verbose=False, hashing=have_h, force=have_f)
+
 # print demos.brain
 
-# noch nicht unterstuetzt:
-# Audio Violation - guter Test for rawdic Datei extrahierung
-# Arte - 1 Disk 2 Files, not linked in index
-# Chromagic - dms link aus text beschreibung pulen
-# Dance Diverse Vol.1, Delirium, most Megademos - error 205
-# Digital Complexity - nicht Disk.1 sondern data (und dann fehler)
-# Project Techno - Archive Fehler? go kaputt
-# The Simpsons - .lha lag nicht im cahcedir
-
-# test("Dizzy Tunes")
-# test("Dizzy Tunes 2")
-# test("Face Another Day")
-# test("Voyage")
-
-'''
-works:
-
-Not Again
-Antideluvian Sloppy Spectacle
-Groovy
-Autumn Nights
-Bard In A Box
-Planet M (demo too fast, not my fault)
-Capricorn One
-Cherokee
-Crayon Shinchan
-Deja Vu (demo laeuft mit logo und musik, aber dann kommt nichts)
-Earwig
-Exage
-Innership
-Jukebox
-Linus
-Maximum Velocity
-Megablast
-# 17.10.13 - reinstalled python at home 2.7.5, got 480 instead of 327 demos now
-Roots
-Monoxide
-'''

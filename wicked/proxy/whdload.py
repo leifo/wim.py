@@ -50,7 +50,7 @@ class whdloadproxy:
     debug = False
     verbose = False
     errors = {}
-    # hashes={} # !!!
+    hashes={} # !!!
 
     # needed to finding the slave in a subdir after unpacking slave lha
     slavesfound = []
@@ -59,16 +59,15 @@ class whdloadproxy:
         self.config = config  # put a wim.py config here
 
         # !!! init stuff moved here to maintain self
-        self.cachedir = "cache"
-        self.tempdir = assign("PROGDIR:temp")
+        self.manageddir = config["manageddir"]
+        self.arcdir = config["arcdir"]
+        self.cachedir = config["cachedir"]
+        self.tempdir = config["tempdir"]
         print "\n  Tempdir located at: %s" % self.tempdir
-        self.systdir = assign("t:\\")
-        #self.systdir = self.tempdir
+        self.ramtempdir = config["ramtempdir"]    # amiga has its temp-device in ram, that's faster & avoids disk-usage
+        # we work in our own subdir in ramtempdir
+        self.scratchdir = os.path.join(self.ramtempdir, config["scratchdirsuffix"])
 
-        # we work in our own subdir in systdir
-        self.scratchdir = os.path.join(self.systdir, "scratch")
-
-        self.manageddir = assign("PROGDIR:managed")
         self.isAmiga = -1
 
         t1 = time.clock()
@@ -82,18 +81,18 @@ class whdloadproxy:
             pass
         else:
             self.loadDict()
+        self.loadHashes()
         t2 = time.clock()
         print "done in %.2f seconds." % (t2 - t1)
 
         # create t: replacement if not on Amiga
-        if not os.path.isdir(assign(self.systdir)):
-            self.systdir = self.tempdir
-            print "Not running on Amiga, assign t: to /tempdir"
+        if not os.path.isdir(assign(self.ramtempdir)):
+            self.ramtempdir = self.tempdir
+            print "Not running on Amiga, assign t: to /tempdir" # todo: double-check this path
 
         # setup cache-dirs
         self.cache = wicked.cache.cache(self.cachedir)
         self.tempcache = wicked.cache.cache(self.tempdir)
-        self.hashes={}
 
     def setVariables(self, debug=False, verbose=False):
         '''
@@ -149,9 +148,9 @@ class whdloadproxy:
     def saveDict(self):
         self.dh.saveDictionary(repr(self.brain), "data/brain.dict")
         # print "***PICKLING"
-        filehandle = open("data/brain.pickle", "wb")
-        pickle.dump(self.brain, filehandle)
-        filehandle.close()
+        #filehandle = open("data/brain.pickle", "wb")
+        #pickle.dump(self.brain, filehandle)
+        #filehandle.close()
 
         # save good content to seperate file to save time upon rebuilding
         if not self.brain.has_key("content"):
@@ -167,21 +166,22 @@ class whdloadproxy:
 
     def loadHashes(self):
         if self.hashes=={}:
-            try:
-                filehandle = open("data/brain-hashes.pickle","r")
-                self.hashes = pickle.load(filehandle)
-                filehandle.close()
-            except:
-                self.hashes=self.dh.loadDictionary("data/brain-hashes.dict")
+            #try:
+            #    filehandle = open("brain-hashes.pickle","r")
+            #    self.hashes = pickle.load(filehandle)
+            #    filehandle.close()
+            #except:
+            #    self.hashes=self.dh.loadDictionary("brain-hashes.dict")
             #self.dh.saveDictionary(self.hashes,"brain-hashes.dict")
-        print " loaded %s hashes\n" % len(self.hashes)
+            self.hashes = self.dh.loadDictionary("data/brain-hashes.dict")
+        print " know %s hashes\n" % len(self.hashes)
 
     def loadDict(self):
-        # self.prods=eval(self.dh.loadDictionary("brain.dict"))
         try:
-            filehandle = open("data/brain.pickle", "r")
-            self.brain = pickle.load(filehandle)
-            filehandle.close()
+            self.brain = eval(self.dh.loadDictionary("data/brain.dict"))
+            #filehandle = open("data/brain.pickle", "r")
+            #self.brain = pickle.load(filehandle)
+            #filehandle.close()
         except:
             self.brain = {}
             self.brain["prods"] = {}
@@ -281,7 +281,18 @@ class whdloadproxy:
         if verbose:
             sys.stdout.write("\n*** Info: Investigating '%s' .. " % (url))
 
-        # step 2 - open the url for inspection, get headers into d
+        # step 2 - check for 302 redirects TODO: fix and handle 302 correctly
+        print "url: %s\n" % url
+        try:
+            h=urllib.urlopen(url)
+            redirect = False;
+            if h.geturl() != url:
+                print "caught a redirect for %s\n\n" % url
+                redirect = True
+        except:
+            return False,False
+
+        # step 3 - open the url for inspection, get headers into d
         try:
             h = urllib.urlopen(url)
             d = h.headers.dict
@@ -656,17 +667,12 @@ class whdloadproxy:
         return True/False if md5hash is known
         '''
         res = False
-
-        # method 1: check via dictionary key
         res=self.hashes.has_key(md5hash)
-
-        # method 2: check via filename in brain/hashes
-        if False:
-            hashdir = os.path.join("brain", "hashes")
-            filename = os.path.join(hashdir, md5hash)
-            # print filename
-            res = os.path.isfile(filename)
-            # print res
+        #hashdir = os.path.join("data", "hashes")
+        #filename = os.path.join(hashdir, md5hash)
+        ## print filename
+        #res = os.path.isfile(filename)
+        # print res
         return res
 
     def getHash(self, md5hash):
@@ -676,19 +682,14 @@ class whdloadproxy:
         # print "**********"
         if not self.haveHash(md5hash):
             return None
+        return self.hashes[md5hash]
 
-        # method 1: access via dictionary key
-        res=self.hashes[md5hash]
-        return res
-
-        # method 2: access via filename in brain/hashes
-        if False:
-            hashdir = os.path.join("brain", "hashes")
-            filename = os.path.join(hashdir, md5hash)
-            # print filename
-            s = open(filename).read()
-            # print s
-            return eval(s)
+        #hashdir = os.path.join("data", "hashes")
+        #filename = os.path.join(hashdir, md5hash)
+        ## print filename
+        #s = open(filename).read()
+        ## print s
+        #return eval(s)
 
     def findHashRoute(self, md5hash, debug=False):
         '''
@@ -722,20 +723,17 @@ class whdloadproxy:
         # print route
         return route
 
-    def findSlave(self, dirname, debug=False, hashing=False, verbose=False):
+    def findSlaves(self, dirname, debug=False, hashing=False, verbose=False):
         '''
-        WHDLoad Install archives have no fixed directory structure.
-        If there is a dir, it might or might not be called like the archive or basename,
-        but might also have hd, -hd, -install, etc. attached, or not. 
-        Also there might be no directory in the archive (e.g. alien3 or carchrodon)
-        The only real given is that the slave ends in .slave. So that is what this function looks for.
-        Input> dirname
-        Output> fully qualified filename (where slave is contained)
+        Input> base dirname for recursive search
+        Output> list of matching slave-filenames
         '''
-        # get full absolute path from relative os.curdir 
-        (path, success) = raPath(dirname)  # needed)
+        self.slavesfound = []  # cleanup
+
+        # get full absolute path from relative os.curdir
+        (path, success) = raPath(dirname)  # needed
         if not success:
-            print "Problem getting absolute path for dirname '%s'.\nStop." % dirname
+            print "***Error: Problem getting absolute path for dirname '%s'.\nStop." % dirname
             print dirname, path, success
             sys.exit()
 
@@ -745,6 +743,7 @@ class whdloadproxy:
         if verbose:
             print "findSlave: looking for '%s' files in '%s'" % (searchfor, path)
 
+        # append matching filenames to self.slavesfound
         os.path.walk(dirname, self.collection_helper, searchfor)
 
         # hacked hashing in here, could be seperated later
@@ -760,13 +759,15 @@ class whdloadproxy:
                 # md5hash = m.hexdigest()
                 # md5hash= base64.urlsafe_b64encode(m.digest())
                 # make urlsafe on amiga without b64encode according to http://pymotw.com/2/base64/
-                t1 = base64.encodestring(m.digest())
-                t2 = t1.replace("/", "_")
-                md5hash = t2.replace("+", "-")
-
+                digest=m.digest()
+                #t1 = base64.encodestring(digest)
+                #t2 = t1.replace("/", "_")
+                #md5hash = t2.replace("+", "-") # has trailing \n, why did this work before?
+                md5hash = base64.urlsafe_b64encode(digest)
                 if debug:
                     print md5hash
-                # print self.hashes[md5hash]["type"]
+
+                #print self.hashes[md5hash]["type"]
                 self.findHashRoute(md5hash)
                 ## step through list of known sightings and find route to top-file
                 # listhashes = self.hashes[md5hash]
@@ -791,17 +792,30 @@ class whdloadproxy:
                 #    print step["filename"]
                 # print "\n"
             pass
+        return self.slavesfound
 
-        if len(self.slavesfound) == 0:
+    def findSlave(self, dirname, debug=False, hashing=False, verbose=False):
+        '''
+        WHDLoad Install archives have no fixed directory structure.
+        If there is a dir, it might or might not be called like the archive or basename,
+        but might also have hd, -hd, -install, etc. attached, or not. 
+        Also there might be no directory in the archive (e.g. alien3 or carcharodon)
+        The only real given is that the slave ends in .slave. So that is what this function looks for.
+        Input> dirname
+        Output> fully qualified filename (where slave is contained)
+        '''
+        slavesfound = self.findSlaves(dirname, debug, hashing, verbose)
+
+        if len(slavesfound) == 0:
             print "*** Error: no slave found in '%s'\nStop." % dirname
             return
             # sys.exit()
 
-        if len(self.slavesfound) > 1:
-            print "*** Warning: more than one slave found in '%s'. Taking first one.\n%s" % (dirname, self.slavesfound)
+        if len(slavesfound) > 1:
+            print "*** Warning: more than one slave found in '%s'. Taking first one.\n%s" % (dirname, slavesfound)
 
-        file = self.slavesfound[0]
-        self.slavesfound = []  # cleanup
+        file = slavesfound[0]
+        #self.slavesfound = []  # cleanup
 
         # double check it is actually a file
         if not os.path.isfile(file):
@@ -818,7 +832,7 @@ class whdloadproxy:
         WHDLoad Install archives have no fixed directory structure.
         If there is a dir, it might or might not be called like the archive or basename,
         but might also have hd, -hd, -install, etc. attached, or not. 
-        Also there might be no directory in the archive (e.g. alien3 or carchrodon)
+        Also there might be no directory in the archive (e.g. alien3 or carcharodon)
         The only real given is that the slave ends in .slave. So that is what this function looks for.
         Input> dirname
         Output> adjusted dirname (where slave is contained)
@@ -937,7 +951,7 @@ class whdloadproxy:
             print "Hmm, no dir matched the entityname, what happened?"
         return
 
-    def install(self, searchname, debug=True, verbose=False, hashing=False):
+    def install(self, searchname, debug=False, verbose=False, hashing=False):
         '''
         install a demo/game, getting all required linked images, etc
         returns True on success and False otherwise
@@ -1021,7 +1035,9 @@ class whdloadproxy:
                     return
                     sys.exit()
 
-                    # at this point we know exactly what the user wants, i.e. the entityname
+        #!!! at this point we know exactly what the user wants, i.e. the entityname
+        if entityname == "demos/FlyingCows_ProSIAK":
+            pass
         data = self.brain["prods"][entityname]
         if verbose:
             print "---> Installing %s by %s (%s)" % (data["name"], data["vendor"], entityname)
@@ -1097,7 +1113,7 @@ class whdloadproxy:
                 scratchdir = dir
         else:
             # new code
-            jobs.execute()
+            jobs.execute() # todo: fix crash bug for "demos/FlyingCows_ProSIAK"
             jobs = joblist("install %s" % data["prodname"], False)
             # find slave, adjust target-dir
             dir = self.findSlaveDir(scratchdir, hashing=hashing)
@@ -1209,7 +1225,7 @@ class whdloadproxy:
                 if type == ".lha":
                     import lhafile
                     print image
-                    lhafilename = os.path.join(assign(self.systdir), image["file"])
+                    lhafilename = os.path.join(assign(self.ramtempdir), image["file"])
                     print lhafilename
                     if lhafile.is_lhafile(lhafilename):
                         f = lhafile.Lhafile(lhafilename)
@@ -1271,7 +1287,8 @@ class whdloadproxy:
                 print bestroute
             # unpack with 3 steps
             #arc = "archive:kg/packs"  ## hacked - todo
-            arc = assign("PROGDIR:packs")  ## hacked - todo
+            #arc = "x:\\amiga\\kg\\packs"
+            #arc = assign("PROGDIR:arc")  ## hacked - todo (packs)
             jobs = joblist("hash-install %s" % data["prodname"], False)
             if steps == 3:
                 if debug:
@@ -1283,7 +1300,7 @@ class whdloadproxy:
                 #jobs.addjob(hjb1)
                 # step into tempdir and unzip zip from containing pack
                 #commands.append("cd %s\n%s" % (scratchdir, step3line))
-                filename1 = os.path.join(arc, zip1)
+                filename1 = os.path.join(self.arcdir, zip1)
                 hjb1 = unzip(filename1, scratchdir, onlynames=[zip2], debug=False)
                 jobs.addjob(hjb1)
                 # now unzip the extracted archive
@@ -1343,7 +1360,7 @@ class whdloadproxy:
             commands.append(
                 'echo noline "whdload preload splashdelay=50 quitkey=69 nocache " >>"%s"' % os.path.join(scratchdir,
                                                                                                          "go"))
-            slavefile = self.findSlave(assign(self.systdir), hashing=hashing)
+            slavefile = self.findSlave(assign(self.ramtempdir), hashing=hashing)
             # print slavefile # lha not unpacked on PC
             head, tail = os.path.split(slavefile)
             commands.append('echo "%s" >>"%s"' % (tail, os.path.join(scratchdir, "go")))
@@ -1363,7 +1380,7 @@ class whdloadproxy:
             #     if installdir != assign(self.tempdir):
             #         content = ';1\ncd "%s"\nexecute go\n' % installdir
             #         #print content
-            #         goname=os.path.join(assign(self.systdir),"go")
+            #         goname=os.path.join(assign(self.ramptempdir),"go")
             #         h=open(goname, "w")
             #         h.write(content)
             #         h.close()
@@ -1388,7 +1405,7 @@ class whdloadproxy:
 
 
         # drop a go-file in installdir, i.e. t:\
-        slavefile = self.findSlave(assign(self.systdir), hashing=hashing)
+        slavefile = self.findSlave(assign(self.ramtempdir), hashing=hashing)
         head, tail = os.path.split(slavefile)
         go = ";1\n"
         go += 'whdload preload splashdelay=50 quitkey=69 nocache %s\n' % tail
@@ -1444,7 +1461,7 @@ class whdloadproxy:
         '''
         hashlist = []
         # check and open lha (using http://trac.neotitans.net/wiki/lhafile)
-        lhafilename = os.path.join("cache", install)
+        lhafilename = os.path.join(self.cachedir, install)
         if lhafile.is_lhafile(lhafilename):
             f = lhafile.Lhafile(lhafilename)
             # find slave filenames
@@ -1461,7 +1478,7 @@ class whdloadproxy:
                     m = md5.new()
                     m.update(f.read(slavename))
                     # hashlist.append(m.hexdigest())
-                    hashlist.append(base64.urlsafe_b64encode(m.digest()))
+                    hashlist.append((install, slavename, base64.urlsafe_b64encode(m.digest())))
 
                 if verbose:
                     print " %s" % hashlist
@@ -1470,7 +1487,7 @@ class whdloadproxy:
                     print "- no slave found for %s" % install
         return hashlist
 
-    def findInstallMethod(self,content):
+    def findInstallMethod(self, content):
         '''
         analyse lha-file for install method (0=RawDIC 1=Patcher 2=DIC 3=Files 4=CD 5=SingleFile)
         :param content: Commodore Amiga installer file candidate
@@ -1502,7 +1519,7 @@ class whdloadproxy:
                     return 3
                 if line.find("(set #version 4)") != -1: # CD
                     return 4
-                if line.find("(set #version 5)") != -1: # Singel File
+                if line.find("(set #version 5)") != -1: # Single File
                     return 5
                 if line.find("(set #version 6)") != -1: # ARCADIA
                     return 6
@@ -1516,7 +1533,24 @@ class whdloadproxy:
         # nothing known found
         return -1
 
-
+    def printProgress(self, iteration, total, prefix='', suffix='', decimals=2, barLength=100):
+        """
+        Call in a loop to create terminal progress bar
+        @params:
+            iteration   - Required  : current iteration (Int)
+            total       - Required  : total iterations (Int)
+            prefix      - Optional  : prefix string (Str)
+            suffix      - Optional  : suffix string (Str)
+            decimals    - Optional  : number of decimals in percent complete (Int)
+            barLength   - Optional  : character length of bar (Int)
+        """
+        filledLength = int(round(barLength * iteration / float(total)))
+        percents = round(100.00 * (iteration / float(total)), decimals)
+        bar = '#' * filledLength + '-' * (barLength - filledLength)
+        sys.stdout.write('%s [%s] %d%s %s\r' % (prefix, bar, percents, '%', suffix)),
+        sys.stdout.flush()
+        if iteration == total:
+            print("\n")
 
     def parseRefsCached(self, debug=False, verbose=False, allow=["demos", "ctros", "mags", "apps", "games"],
                         hashing=False):
@@ -1542,10 +1576,13 @@ class whdloadproxy:
         # get corrections.dict handy
         corrections = eval(open("data/corrections.dict").read())
         print "loaded corrections.dict"  #: %s" %corrections
-
+        maxcount =  len(lines)
+        count=0
         for line in lines:
             line = line.decode("latin1")
-            print line
+            #sys.stdout.write ("\r%s" % line)
+            self.printProgress(count,maxcount,prefix = 'Parsing references:', suffix = 'Complete', barLength = 50)
+            count += 1
             has_corrections = False  # does not mean the file, but will be True is an entity like "Arte" has corrections
             if line.startswith("#"):
                 # comments
@@ -1915,3 +1952,191 @@ class whdloadproxy:
 
         # self.getStats()
         self.saveDict()
+
+import zipfile
+import cStringIO as StringIO
+# import lhafile (only pc c-extension, but like zipfile)
+import md5
+import pickle
+import os,sys,getopt,time
+from wicked.helpers import dicthelpers
+import base64 # looking for shorter filenames as of http://effbot.org/librarybook/md5.htm
+
+
+class whdloadhasher:
+    # derived from hasher2.py on 08.06.2017
+    config = {}
+
+    def __init__(self, config={}):
+        self.config = config  # put a wim.py config here
+        # !!! init stuff moved here to maintain self
+        self.arcdir = config["arcdir"]
+        self.dh = wicked.helpers.dicthelpers()
+        try:
+            self.hashes = self.dh.loadDictionary("data/brain-hashes.dict")
+        except:
+            self.hashes = {}
+
+    def md5hexfile(self, filename):
+        # s=open((os.path.join(pathname,filename)),"rb").read()
+        s = open(filename, "rb").read()
+        m = md5.new()
+        m.update(s)
+        # searchhash = m.hexdigest()
+        searchhash = base64.urlsafe_b64encode(m.digest())
+        return searchhash
+
+    def isknownfilename(self, filename):
+        '''
+        returns True if filename is already used in a hash
+        '''
+        keys = self.hashes.keys()
+        # print keys
+        # print len(keys)
+        for key in keys:
+            # its a list
+            elems = self.hashes[key]
+            for elem in elems:
+                # print elem
+                if elem["type"] == "f":  # is file
+                    if elem["filename"] == filename:
+                        return True
+        return False
+
+    def findhash(self, filename):
+        '''
+        returns hash for known filenames
+        '''
+        keys = self.hashes.keys()
+        for key in keys:
+            # its a list
+            elems = self.hashes[key]
+            for elem in elems:
+                if elem["type"] == "f":  # is file
+                    if elem["filename"] == filename:
+                        return key
+        return ""
+
+    def analyzeZIP(self, filehandle, container="", filename=""):
+        '''
+        prior to Python v2.7 only filename
+        http://docs.python.org/2/library/zipfile
+        take in an open file-handle (e.g. from open or zipfile.open) and return True if it is ZIP
+        '''
+        # print filehandle
+        if zipfile.is_zipfile(filehandle):
+            z = zipfile.ZipFile(filehandle)
+            for info in z.infolist():
+                # get filename
+                zfilename = info.filename
+                # print zfilename
+
+                # recurse if filename ends on .zip
+                if zfilename.lower().endswith(".zip"):
+                    print " recursing into '%s'" % zfilename
+                    # analyzeZIP(z.open(zfilename, "r"),container=container, filename=zfilename)
+                    i = z.getinfo(zfilename)
+                    # print i.date_time
+                    # print i.filename
+                    # print i.compress_type
+                    # print i.comment
+                    # print i.extra
+                    # print i.create_system
+                    # print i.create_version
+                    # print i.extract_version
+                    # print i.reserved
+                    # print i.flag_bits
+                    # print i.volume
+                    # print i.internal_attr
+                    # print i.external_attr
+                    # print i.header_offset
+                    # print i.CRC
+                    # print i.compress_size
+                    # print i.file_size
+                    # print " created %s, original size: %s, compressed size: %s, ratio: %.2f %%" % (i.date_time, i.file_size, i.compress_size, float(i.compress_size)/ float(i.file_size)*100)
+
+                    # load file with stringio
+                    memfile = StringIO.StringIO()
+                    memfile.write(z.read(zfilename))
+                    memfile.seek(0)
+
+                    # md5 hash the containing file
+                    m = md5.new()
+                    m.update(memfile.read())
+                    # ziphash = m.hexdigest()
+                    ziphash = base64.urlsafe_b64encode(m.digest())
+                    hi = {}
+                    hi["fullname"] = zfilename
+                    head, tail = os.path.split(zfilename)
+                    hi["filename"] = tail
+                    hi["type"] = "z"  # in zip
+                    hi["in"] = container
+                    self.dh.logValueToDict(self.hashes, ziphash, hi)
+
+                    # step into containing file
+                    memfile.seek(0)
+                    self.analyzeZIP(memfile, container=ziphash, filename=zfilename)
+                    print "******************************"
+                # compute md5 hash if filename ends on .slave
+                if zfilename.lower().endswith(".slave"):
+                    s = z.read(zfilename)
+                    m = md5.new()
+                    m.update(s)
+                    # zfilehash = m.hexdigest()
+                    zfilehash = base64.urlsafe_b64encode(m.digest())
+                    print " file: %s, md5: %s" % (zfilename, zfilehash)
+                    # if zfilehash==searchhash:
+                    #    print "*** Info: Matching MD5 sum for searchhash '%s' on file '%s'" % (searchhash, zfilename)
+                    #    #sys.exit()
+                    # store has info for this file
+                    hi = {}
+                    hi["fullname"] = zfilename
+                    head, tail = os.path.split(zfilename)
+                    hi["filename"] = tail
+                    hi["in"] = container  # hash of
+                    hi["type"] = "z"  # zip
+
+                    # hashes[zfilehash]=hi
+                    self.dh.logValueToDict(self.hashes, zfilehash, hi)
+                else:
+                    pass  # print " file: %s" % (zfilename)
+        else:
+            print "*** Error: not a ZIP-File: '%s'" % filename
+
+    def hasharchives(self):
+        # main method, configure via config dict passed during instantion
+
+        filenames = os.listdir(self.arcdir)
+        # info
+        print "Hashing archives in directory '%s' ..." % self.arcdir
+
+        # iterate over filenames in filesystem to start with (later recurse in archives as well)
+        for filename in filenames:
+            fullfilename = os.path.join(self.arcdir, filename)
+            print fullfilename
+            filehandle = open(fullfilename, "rb")
+            if zipfile.is_zipfile(filehandle):
+                sys.stdout.write("*** Info: ZIP-file '%s', " % fullfilename)
+                if self.isknownfilename(filename):
+                    print "is known"
+                    ziphash = self.findhash(filename)
+                else:
+                    ziphash = self.md5hexfile(fullfilename)
+                    hi = {}
+                    hi["fullname"] = filename
+                    head, tail = os.path.split(filename)
+                    hi["filename"] = tail
+                    hi["type"] = "f"  # file
+
+                    # hashes[ziphash] = hi
+                    self.dh.logValueToDict(self.hashes, ziphash, hi)
+
+                    print " md5: %s" % (ziphash)
+
+                    # open file and analyze
+                    self.analyzeZIP(filehandle, container=ziphash, filename=filename)
+            else:
+                pass
+                # print "*** Warning: not a zip-file: %s ... skipping" % fullfilename
+
+        self.dh.saveDictionary(self.hashes, "data/brain-hashes.dict")
