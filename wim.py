@@ -25,32 +25,32 @@
 #          - improved install() do be more clever with searchname matching (e.g. Arte, Sanity_Arte, ('demos', 'Sanity_Arte')) all pass, and Megademo lists matching megademos
 #          - made basename and name search lowercase
 # 22.10.13 - lowercase search for primary key in install()
-# 24.10.13 - multiple disk install supported (desert dream works)
+# 24.10.13 - v0.08, multiple disk install supported (desert dream works)
+#          - v0.09, type switch, added "zip,adf", made Katakis work as the first game (16:43), also R-Type
+#          - seperated cache and temp dirs
+#          - log errors with references to entityname and added -e option to investigate error occurences
 
-
-# done>
-#       - make desert dreams work (2 disk simple dms
-#       - patch .dm typo for Megademo Excellence (what is the correct name for the patch list)
 
 # todo:
-#       - autodetect rawdic/dic install (find "(set #program "DIC")" , or "(set #program "RawDIC")" in install)
+#       - make ctros work
+#       - -x for execute option
+#       - parse allow in parserefscached from -a option
 
-#     - devise switch for different install methods
-#       - make Katakis work (1 disk adf in zip advanced case)
-#       - make devils' key work (3 disk 6 dms does not work, found 3 disk 3 dms, still needs rawdic)
+#       - autodetect rawdic/dic install (find "(set #program "DIC")" , or "(set #program "RawDIC")" in install)
+#       - make devils' key work (3 disk 6 dms does not work, found 3 disk 3 dms, still needs rawdic?)
 
 #       - seperate function for building stats
 #       - fix stats upon recreation
 
 #       - create dirs as needed, unpack there, support removing (otherwise no package manager)
+#       - make work with http://aminet.net/package/util/wb/whdautolaunch
+
 #       - fix error line 723 in cleanRefsCached (self.dh.countToDict(self.errors,"removed for missing images '%s'" % self.brain["prods"][name]["images"]))
 #       - make lha work
 #       - make lzx work
 #       - make zip work
 #       - make adf work
 
-#       - -x for execute option
-#       - seperate cache and temp dirs
 
 #       - use md5 or other hash to verify and find disk images
 #       -- seen as in hash
@@ -65,7 +65,7 @@ try:
     import cPickle as pickle
 except:
     import pickle
-from lxo_helpers import dicthelpers
+from lxo_helpers import dicthelpers,listhelpers
 
 
 # handle 3 key differences between Win32 2.7 and Amiga Python 2.0
@@ -88,6 +88,7 @@ have_l=False
 have_r=False
 have_s=False
 have_i=False
+have_e=False
 
 try:
     from bs4 import BeautifulSoup
@@ -124,7 +125,8 @@ class whdloadProxy:
 
     cachedir = "cache"
     #amidisk = "ff0:"
-    tempdir = "t:"
+    tempdir = "temp"
+    installdir = "t:"
     isAmiga = -1
     
     lastt = None
@@ -140,6 +142,7 @@ class whdloadProxy:
     def __init__(self):
         t1=time.clock()
         self.dh=dicthelpers()
+        self.lh=listhelpers()
         if self.checkConfig():
             # cant currently build on Amiga Python 2.0
             #self.buildTables(recursive=False)
@@ -289,7 +292,7 @@ class whdloadProxy:
         # otherwise just return input
         return url
         
-    def buildImagesMeta(self, demo, hint, debug=False, verbose=True, allow=[".dms"]):
+    def buildImagesMeta(self, prodname, hint, debug=False, verbose=True, allow=[".dms",".adf"], primary=None):
         '''
         consume non deterministic pointer to images and try to be clever about it
         input: last entry from the line from the list of installs
@@ -298,6 +301,12 @@ class whdloadProxy:
         # quick out if images is already a dict not a str
         if type(hint)=="dict":
             return hint # means that it was most probably already fixed or corrected
+  
+        # if primary is given use that for logging errors
+        if primary != None: 
+            errorname = primary
+        else:
+            errorname = prodname
         
         #if demo=="Roots":
         if True:
@@ -308,33 +317,29 @@ class whdloadProxy:
             seenat, filename = os.path.split(hint)
             seenat = self.expandPlaceholders(seenat)
             if len(filename)==0:
-                self.dh.countToDict(self.errors,"no direct link")
+                self.dh.logValueToDict(self.errors,"no direct link", errorname)
                 if verbose:
-                    print "*** Warning: no direct link to: %s (%s)" % (demo,hint)
+                    print "*** Warning: no direct link to: %s (%s)" % (prodname,hint)
                 return {}
             # get suffix
             trash, ext = os.path.splitext(hint)
             ext=ext.lower()
 
             if len(ext)==0:
-                self.dh.countToDict(self.errors,"no direct link")
+                self.dh.logValueToDict(self.errors,"no direct link",errorname)
                 if verbose:
-                    print "*** Warning: no direct link to: %s (%s)" % (demo,hint)
+                    print "*** Warning: no direct link to: %s (%s)" % (prodname,hint)
                 return {}
 
             
             # check for allowed extensions
             if ext not in allow:
-                self.dh.countToDict(self.errors,"unsupported extension '%s'" % ext)
+                self.dh.logValueToDict(self.errors,"extension %s" % ext, errorname)
                 if verbose:
-                    print "*** Warning: unsupported extension '%s' for '%s' ('%s','%s')" % (ext,demo,hint,seenat)
-            
-            if debug:
-                print demo, seenat, filename, ext
-            
-            # only dms for the moment
-            if ext!= ".dms":
+                    print "*** Warning: unsupported extension '%s' for '%s' ('%s','%s')" % (ext,prodname,hint,seenat)
                 return {}
+            if debug:
+                print prodname, seenat, filename, ext
             
             #print "still here"
             
@@ -360,7 +365,7 @@ class whdloadProxy:
         '''
         if config["has_bs4"]==False:
             return
-        #s = self.cacheGet(self.url_path + self.brain["prods"][demoname]["info"])
+        #s = self.cacheGet(self.url_path + self.brain["prods"][demoname]["infox"])
         s = self.cacheGet(self.url_whdload + self.brain["prods"][demoname]["category"] +self.brain["prods"][demoname]["info"])
         # parse html
 
@@ -411,7 +416,33 @@ class whdloadProxy:
             p=False
         for prod in self.brain["prods"].keys():
             if p or self.brain["prods"][prod]["category"]==category:
-                print "%s by %s" % (self.brain["prods"][prod]["prodname"], self.brain["prods"][prod]["vendor"])
+                entity=self.brain["prods"][prod]
+                #print entity
+                images = entity["images"]
+                if images !=None:
+                    numdisks = len(images)
+                else:
+                    numdisks = "No"
+                print "%s by %s (%s - %s disks)" % (entity["prodname"], entity["vendor"], entity["basename"], numdisks )
+                #print "%s by %s (type s)" % (entity["prodname"], entity["vendor"])
+    
+    def getError(self,error):
+        '''
+        more details on occurences of error
+        '''
+        if self.errors.has_key(error):
+            elems = self.errors[error]
+            print "Error cause '%s' occured %d times:" % (error, len(elems))
+            for elem in elems:
+                if self.brain["prods"].has_key(elem):
+                    print "  %s, %s" % (elem,self.brain["prods"][elem]["oimages"])
+                else:
+                    print "  %s, -" % (elem)
+                
+        else:
+            print "*** Warning: no known error cause '%s'" % error
+            print "Did you supply the -r option for reference parsing?"
+    
     def getStats(self):
         '''
         print some stats from parseRefs
@@ -421,7 +452,31 @@ class whdloadProxy:
         self.stat_iauthor={}
 
         '''
-        print "Common errors: %s" % str(self.errors)
+        # 1. computer "uncertainty" list, where links are given but no image has been recognized
+        # no direct link, missing images
+        #l1=self.errors["no direct link"]
+        #l2=self.errors["missing images"]
+        #uncertain = self.lh.difference(l1,l2)
+        #uncertain = filter(lambda x:x not in l2,l1)
+        #uncertain = list(set(l1) and set(l2))
+        #uncertain = list(set(l1) - set(ncertain))
+        #uncertain = self.lh.difference(self.errors["no direct link"], self.errors["missing images"])
+        uncertain=None
+        if uncertain != None:
+            for elem in uncertain:
+                self.dh.logValueToDict(self.errors,"uncertain",elem)
+            
+        # 2. sort and display results (currently not python v2.0 compatible, i.e. not on Amiga)
+        #sorted([('abc', 121),('abc', 231),('abc', 148), ('abc',221)],key=lambda x: x[1])
+        #print "Common errors: %s" % str(self.errors.keys())
+        print "Common errors:"
+        tuplelist=[]
+        for error in self.errors.keys():
+            count = len(self.errors[error])
+            tuplelist.append( (error, count) )
+        sortedtuplelist=sorted(tuplelist,key=lambda x: x[1])
+        for tuple in sortedtuplelist:
+            print "  %s : %s" % (tuple[0], tuple[1])
         print "\nKnown categories: %s" % str(self.brain["stats"]["category"])
         
     
@@ -490,10 +545,11 @@ class whdloadProxy:
                     print "Stop."
                     sys.exit()             
         
-        # at this point we know what user wants, i.e. the entityname
+        # at this point we know exactly what the user wants, i.e. the entityname
         data = self.brain["prods"][entityname]
         print "---> Installing %s by %s (%s)" % (data["name"], data["vendor"], entityname)
-
+        print data
+        
         commands=[] # these will be executed one after another on target system
 
         # make sure to have metadata
@@ -511,14 +567,18 @@ class whdloadProxy:
         images = data["images"]
         if debug:
             print images
-        # number of disks
-        numdisks = len(images)
-        print "Number of disks: %d" % numdisks
-
+        # number of disks, "ctros" special case as has no images
+        try:
+            numdisks = len(images)
+            print "Number of disks: %d" % numdisks
+        except:
+            numdisks = 0
+            pass
         # todo: seperate get file from installation handler
             
+        category=data["category"]
         # iterate over disks
-        if numdisks>0:
+        if numdisks>0 or category=="ctros":
             for i in range(numdisks):
                 disknum=i+1
                 multiimages=False   # True if more than 1 image per disk
@@ -531,8 +591,10 @@ class whdloadProxy:
                 image = images[disknum][0]
                 
                 # check for dms
-                if image["type"]!=".dms":
-                    print "*** Error: Cannot currently handle anything else than .dms but this is of type '%s'" % image["type"]
+                supportedtypes = (".dms", "zip,adf", ".adf")
+                type = image["type"]
+                if type not in supportedtypes:
+                    print "*** Error: Can currently only handle %s, but this is of type '%s'" % (supportedtypes, type)
                     return False
                 print image
                 
@@ -543,22 +605,48 @@ class whdloadProxy:
                 print "Downloading %s from %s" % (image["file"], url)
                 self.cacheGet(url)
                 
-                # un-dms with system call
-                fname = os.path.join(self.cachedir, image["file"])
-                #dmsline = "dms write %s to %s" % (fname, self.amidisk)
-                # http://zakalwe.fi/~shd/foss/xdms/xdms.txt
-                adfname = image["file"].lower().replace(image["type"],".adf")    #lower okay as Amiga filesystem is not case sensitive (error found with "r.o.m. 1" which has upper case .DMS)
-                adfnamefull = os.path.join(self.cachedir, adfname)
-                dmsline = "xdms -d %s u %s +%s" % (self.cachedir, fname,adfname)
-                if debug:
-                    print "Creating %s from %s" %(adfnamefull, fname)
-                    
-                #os.system(dmsline)
-                commands.append(dmsline)
+                # handle dms
+                if type==".dms":
+                    # un-dms with system call
+                    fname = os.path.join(self.cachedir, image["file"])
+                    #dmsline = "dms write %s to %s" % (fname, self.amidisk)
+                    # http://zakalwe.fi/~shd/foss/xdms/xdms.txt
+                    adfname = image["file"].lower().replace(image["type"],".adf")    #lower okay as Amiga filesystem is not case sensitive (error found with "r.o.m. 1" which has upper case .DMS)
+                    adfnamefull = os.path.join(self.cachedir, adfname)
+                    dmsline = "xdms -d %s u %s +%s" % (self.tempdir, fname,adfname)
+                    if debug:
+                        print "Creating %s from %s" %(adfnamefull, fname)
+                        
+                    #os.system(dmsline)
+                    commands.append(dmsline)
 
-                # DIC produces Disk.1/2/3, etc.
-                copyline = 'copy %s/%s to "t:Disk.%s"' %(self.cachedir, adfname,disknum)        
-                commands.append(copyline)
+                    # DIC produces Disk.1/2/3, etc.
+                    copyline = 'copy %s/%s to "t:Disk.%s"' %(self.tempdir, adfname,disknum)        
+                    commands.append(copyline)
+                    
+                # handle zipped adf
+                if type=="zip,adf":
+                    fname = os.path.join(self.cachedir, image["file"])
+                    adfname = image["image"]
+                    adfnamefull = os.path.join(self.cachedir, adfname)
+                    # -jo for overwrite -no for keeping
+                    unzipline = "unzip -jo %s %s" % ( "/%s" % (fname) , adfname)
+                    # step into tempdir and unzip
+                    commands.append("cd %s\n%s" % (self.tempdir,unzipline))
+                    # copy adf to installdir
+                    # later todo: special case "saveas" for images that need a special name
+                    copyline = 'copy %s/%s to "t:Disk.%s"' %(self.tempdir, adfname, disknum)        
+                    commands.append(copyline)
+                
+                # handle adf
+                if type==".adf":
+                    fname = os.path.join(self.cachedir, image["file"])
+                    #adfname = image["file"]
+                    #adfnamefull = os.path.join(self.cachedir, adfname)
+                    # copy adf to installdir
+                    # later todo: special case "saveas" for images that need a special name
+                    copyline = 'copy %s to "t:Disk.%s"' %(fname, disknum)        
+                    commands.append(copyline)
 
         else:
             print "*** Info: Data==%s " % data
@@ -566,11 +654,11 @@ class whdloadProxy:
             print "Stop."
             sys.exit()
                       
-        # unpack installer
+        # unpack installer, with special case for "ctros"
         iname = os.path.join(self.cachedir, data["install"])
-        #lhaline = "lha x -N %s %s" % (iname ,self.tempdir)
-        lhaline = "lha e -x0 -N %s #?.inf #?.slave #?README %s" % (iname ,self.tempdir)
-        #lhaline = "lha e -x0 -N %s #?.slave #?README %s" % (iname ,self.tempdir) # no inf
+        #lhaline = "lha x -N %s %s" % (iname ,self.installdir)
+        lhaline = "lha e -x0 -N %s #?.inf #?.slave #?README %s" % (iname ,self.installdir)
+        #lhaline = "lha e -x0 -N %s #?.slave #?README %s" % (iname ,self.installdir) # no inf
         commands.append(lhaline)
 
         # ab hier wirds h?sslich hardcoded zum ende des tages :)
@@ -612,8 +700,8 @@ class whdloadProxy:
             
         
         return
-
-    def parseRefsCached(self,allow=["demos","ctros","mags","apps","games"]):
+    
+    def parseRefsCached(self,allow=["demos","ctros","mags","apps"]):
         s = self.cacheGet(self.url_refs)
         self.parseRefs(s,allow=allow,debug=False)
         self.saveDict()
@@ -629,7 +717,7 @@ class whdloadProxy:
         
         # get corrections.dict handy
         corrections=eval(open("corrections.dict").read())
-        print "loaded corrections.dict: %s" %corrections      
+        print "loaded corrections.dict" #: %s" %corrections      
         
         for line in lines:
             has_corrections=False # does not mean the file, but will be True is an entity like "Arte" has corrections                      
@@ -717,10 +805,14 @@ class whdloadProxy:
                             meta = {}
                             meta["category"]=category
                             meta["basename"]=basename
+                            # construct primary key in a commandline-friendly fashion
+                            primary = "%s/%s" % (category, basename)
+
                             meta["prodname"]=prodname
                             meta["name"]=name
                             meta["vendor"]=vendor
                             meta["iauthor"]=iauthor
+                            meta["oimages"]=images
                             meta["id_hol"]=id_hol
                             meta["id_lemon"]=id_lemon
                             meta["id_bitworld"]=id_bitworld
@@ -735,7 +827,7 @@ class whdloadProxy:
                             # apply corrections step 2
                             touchedimages=False
                             if has_corrections:
-                                print "*** Info: applying corrections for %s (%s), i.e. %s" %(basename, category, corrections[(category,basename)].keys())
+                                print "  applying corrections for %s (%s), i.e. %s" %(basename, category, corrections[(category,basename)].keys())
                                 for key in corrections[(category,basename)].keys():
                                     if key=="images":
                                         touchedimages=True
@@ -749,8 +841,12 @@ class whdloadProxy:
                             
                             if not touchedimages:
                                 #print images
-                                images = self.buildImagesMeta(prodname, images,debug=self.debug,verbose=self.verbose)
-                                meta["images"]=images
+                                images = self.buildImagesMeta(prodname, images,debug=self.debug,verbose=self.verbose, primary=primary)
+                                # set images and consider special case for "ctros"
+                                if category!="ctros":
+                                    meta["images"]=images
+                                else:
+                                    meta["images"]=None
                             touchedimages=False
                             
                             #if name=="Arte":
@@ -760,31 +856,7 @@ class whdloadProxy:
                                 print
                             
                             has_corrections=False   # reset for next loop
-
-                                
-                            # should be moved to after applied corrections!
-                            #if len(images)!=0:
-                            #    has_image = True
-                            #else:
-                            #    has_image = False
-                        
-                            #if category == "demos":
-                            #    if not has_image and debug:
-                            #        print "*** Warning: no images for: %s" % name
-                            #    #else:
-                            #        #if name == "Roots":
-                            #        #    print line
-                            #        #    print "category: %s\nbasename: %s\nname: %s\nvendor: %s\niauthor: %s\nimages: %s\nid_hol: %s\nid_lemon: %s\nid_bitworld: %s\nid_ada: %s\nid_pouet: %s" %(category, basename, name, vendor, iauthor, images, id_hol, id_lemon, id_bitworld, id_ada, id_pouet)
-                            #if category == "games":
-                            #    if len(images)!=0:
-                            #        #print "*** Wow: images for: %s" % name
-                            #        pass        
-                            # quick hack
-                            #if len(str(meta["images"]))>2:   #{}
-                            
-                            # construct primary key in a commandline-friendly fashion
-                            primary = "%s/%s" % (category, basename)
-                            
+                                                       
                             self.brain["prods"][primary] = meta
                             # count some stats (todo: avoid double counting -> seperate function)
                             self.dh.countToDict(self.brain["stats"]["category"], category)
@@ -842,7 +914,7 @@ class whdloadProxy:
                 # remove this prod from brain, i.e. do not copy
                 #print "remove %s" %name
                 #sys.exit()
-                self.dh.countToDict(self.errors,"missing images")
+                self.dh.logValueToDict(self.errors,"missing images",name)
                 if verbose:
                     print "remove %s (%s)" % (name,self.brain["prods"][name]["images"])
                 pass
@@ -870,10 +942,10 @@ def test2():
     self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.08, WHDLoad Install Manager by Leif Oppermann (20.10.2013)"
+print "Wim.py v0.09, WHDLoad Install Manager by Leif Oppermann (20.10.2013)"
 #print "  automates your WHDLoad installation chores"
 
-optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrs')
+optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrse:')
 if len(optlist)==0:
     print "what to do?"
     sys.exit()
@@ -895,6 +967,11 @@ for o, a in optlist:
         print "  cleanRefs()"
         have_c=True
         #demos.cleanRefsCached()
+
+    if o== "-e":
+        print "  error()"
+        have_e_a=a
+        have_e=True
 
     if o== "-l":
         print "  list known %s" % a
@@ -951,7 +1028,12 @@ if have_c:
 if have_s:
     print "\n---> Stats"
     demos.getStats()
-
+    
+if have_e:
+    print "\n---> investigate error"
+    demos.getError(have_e_a)
+    sys.exit()
+    
 if have_l:
     print "\n---> list"
     demos.getKnownEntities(a)
