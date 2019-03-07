@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # 10.10.13 - first test on WHDLoad Installer with BeautifulSoup HTML parsing
-# 12.10.13 - second version, put into class, cacheGet, build tables from all.html, hasDemo, getMeta
-# 13.10.13 - made to work on amiga python 2.0 and pc python 2.7, stored local dict, called wimpy
+# 12.10.13 - v0.02, second version, put into class, cacheGet, build tables from all.html, hasDemo, getMeta
+# 13.10.13 - v0.03, made to work on amiga python 2.0 and pc python 2.7, stored local dict, called wimpy
 #          - started using komodo ide and debugger
 #          - added allv.html, still only demos (games later), added getKnownDemos()
 #          - fixed binary download (wb)
@@ -10,10 +10,19 @@
 #          - needs cleanup, make work for other dms prods, control install dirs and other heuristics, keep track of changes?
 # 16.10.13 - improved xdms line to use cachedir for saving adf
 #          - added getopt -i -l -v
-# 17.10.13 - realised that Python 2.7.0 at home returns less  results (327 vs 479) with Bs4
+# 17.10.13 - v0.04, realised that Python 2.7.0 at home returns less  results (327 vs 479) with Bs4
 #            than Python 2.7.4 at work. time to upgrade I reckon
+# 19.10.13 - v0.05, adding parseRefs, bye bye beautiful soup
+#          - checks for supported images and types before storing in brain (demos, games, ctros, apps, mags)
+#          - pickle instead of dict
+#          - renamed getKnownDemos to getKnownEntitites which takes in categories, e.g. games or demos
 
-import os,sys,getopt
+
+import os,sys,getopt,time
+try:
+    import cPickle as pickle
+except:
+    import pickle
 from lxo_helpers import dicthelpers
 
 
@@ -37,6 +46,7 @@ try:
 except:
     config["has_bs4"]=False
 
+import urlparse
 try:
     import urllib
     config["has_urllib"]=True
@@ -56,7 +66,11 @@ class whdloadWebProxyDemos:
 
     url_all= "http://www.whdload.de/demos/all.html"
     url_allv = "http://www.whdload.de/demos/allv.html"
-    url_path = "http://www.whdload.de/demos/"
+    url_path = "http://www.whdload.de/demos/" # deprecated since 0.04
+    url_whdload = "http://www.whdload.de/"
+    
+    url_refs = "http://whdload.de/db/refs.txt"
+    placeholder={}
 
     cachedir = "cache"
     amidisk = "ff0:"
@@ -68,14 +82,24 @@ class whdloadWebProxyDemos:
     prods = {}  # results will go here
     dh=None
     
+    #dicts for stats, filled by parseRefs        
+    stat_category={}
+    stat_vendor={}
+    stat_iauthor={}
+        
     def __init__(self):
+        t1=time.clock()
         self.dh=dicthelpers()
         if self.checkConfig():
             # cant currently build on Amiga Python 2.0
-            self.buildTables(recursive=False)
-            self.saveDict()
+            #self.buildTables(recursive=False)
+            #self.saveDict()
+            self.loadDict()
+            pass
         else:
             self.loadDict()
+        t2=time.clock()
+        print "done in %.2f seconds." % (t2-t1)
 
     def checkConfig(self, verbose=False):
         '''
@@ -109,19 +133,32 @@ class whdloadWebProxyDemos:
         
         print        
         if okversion:
-            print "--> generator functionality (scrape website, build tables)"
+            #print "--> generator functionality (scrape website, build tables)"
             self.isAmiga=False
         else:
-            print "--> installer functionality (install)"
+            #print "--> installer functionality (install)"
             self.isAmiga=True
+            
+        sys.stdout.write("Initializing ... ")
+
         return okversion
         
     def saveDict(self):
-        self.dh.saveDictionary(repr(self.prods),"brain.dict")
+        #self.dh.saveDictionary(repr(self.prods),"brain.dict")
+        print "***PICKLING"
+        filehandle = open("brain.pickle","wb")
+        pickle.dump(self.prods, filehandle)
+        filehandle.close()
         return
         
     def loadDict(self):
-        self.prods=eval(self.dh.loadDictionary("brain.dict"))
+        #self.prods=eval(self.dh.loadDictionary("brain.dict"))
+        try:
+            filehandle = open("brain.pickle","r")
+            self.prods = pickle.load(filehandle)
+            filehandle.close()
+        except:
+            self.prods={}
         
         #try:
         #    self.prods=dh.loadDictionary("wimpy.dict")
@@ -157,7 +194,7 @@ class whdloadWebProxyDemos:
         savefile.write(content)
         savefile.close()
                 
-        return content
+        return content    
     
     def parseIndexAll(self, recursive=False, debug=False):
         s = self.cacheGet(self.url_all)
@@ -225,23 +262,62 @@ class whdloadWebProxyDemos:
                     raise
                 count += 1  
     
-    def buildImagesMeta(self, demo, hint, debug=False):
+    def expandPlaceholders(self, url, debug=False):
+        '''
+        uses self.placeholder to expand url to original state
+        '''
+        #print url
+        if url.startswith("http"):
+            # no expansion needed
+            return url
+        if url.startswith("ftp"):
+            # no expansion needed
+            return url
+        
+        elem = url.split(":")
+        if len(elem)!=2:
+            # don't know
+            if debug:
+                print "*** Warning: placeholder error with: %s (%s)" % (url,str(elem))
+            return url
+        
+        '''
+        url="aminet:demo/aga/sanity_roots.dms"
+        {'aminet': 'http://www.aminet.net/'}
+        
+        '''
+        # substitute placeholder
+        if self.placeholder.has_key(elem[0]):
+            #print elem[0], elem[1]
+            return self.placeholder[elem[0]]+elem[1]
+        # otherwise just return input
+        return url
+        
+    def buildImagesMeta(self, demo, hint, debug=False,allow=[".dms"]):
         '''
         consume non deterministic pointer to images and try to be clever about it
         input: last entry from the line from the list of installs
         out dictionary with 
         '''
-        #if demo=="Not Again":
+        #if demo=="Roots":
         if True:
             #print "--> parsing image locations"
             # one disks first, start with dms
             
             # get basename
             seenat, filename = os.path.split(hint)
+            seenat = self.expandPlaceholders(seenat)
+            if len(filename)==0:
+                if debug:
+                    print "*** Warning: no direct link to: %s (%s)" % (demo,hint)
             
             # get suffix
             trash, ext = os.path.splitext(hint)
             ext=ext.lower()
+            
+            # check for allowed extensions
+            if ext not in allow:
+                print "*** Warning: unsupported extension '%s' for '%s'" % (ext,demo)
             
             if debug:
                 print demo, seenat, filename, ext
@@ -394,18 +470,37 @@ class whdloadWebProxyDemos:
         else:
             return None
     
-    def getKnownDemos(self):
+    def getKnownEntities(self,category):
+        '''
+        prints all currently known and supported entitites of a certain category. prints all it category is ""
+        '''
+        if category=="":
+            p=True
+        else:
+            p=False
         for prod in self.prods.keys():
-            print "%s by %s" % (self.prods[prod]["prodname"], self.prods[prod]["groupname"])
-        
+            if p or self.prods[prod]["category"]==category:
+                print "%s by %s" % (self.prods[prod]["prodname"], self.prods[prod]["vendor"])
+    def getStats(self):
+        '''
+        print some stats from parseRefs
 
+        self.stat_category={}
+        self.stat_vendor={}
+        self.stat_iauthor={}
+
+        '''
+        print "Known categories: %s" % str(self.stat_category)
+        
+    
     def buildTables(self, recursive=False, debug=False):
         '''
         Cache relevant content and parse demo list
         '''
-        self.parseIndexAll(recursive=recursive, debug=False)
-        self.parseIndexAllV(recursive=recursive, debug=False)
-        print
+        #self.parseIndexAll(recursive=recursive, debug=False)
+        #self.parseIndexAllV(recursive=recursive, debug=False)
+        self.parseRefsCached()
+        
         
     def install(self, demoname, debug=False, verbose=False):
         '''
@@ -414,7 +509,7 @@ class whdloadWebProxyDemos:
         returns True on success and False otherwise
         '''      
         data = self.prods[demoname]
-        print "---> Installing %s by %s" % (demoname, data["groupname"])
+        print "---> Installing %s by %s" % (demoname, data["vendor"])
 
         commands=[] # these will be executed one after another on target system
 
@@ -464,7 +559,7 @@ class whdloadWebProxyDemos:
                 fname = os.path.join(self.cachedir, image["file"])
                 #dmsline = "dms write %s to %s" % (fname, self.amidisk)
                 # http://zakalwe.fi/~shd/foss/xdms/xdms.txt
-                adfname = image["file"].replace(image["type"],".adf")
+                adfname = image["file"].lower().replace(image["type"],".adf")    #lower okay as Amiga filesystem is not case sensitive (error found with "r.o.m. 1" which has upper case .DMS)
                 adfnamefull = os.path.join(self.cachedir, adfname)
                 dmsline = "xdms -d %s u %s +%s" % (self.cachedir, fname,adfname)
                 if debug:
@@ -474,6 +569,7 @@ class whdloadWebProxyDemos:
                 commands.append(dmsline)
         else:
             print "*** Error: no disks found!"
+            print data
             sys.exit()
                       
         # unpack installer
@@ -506,9 +602,9 @@ class whdloadWebProxyDemos:
         #commands.append('cd "t:"\nwhdload Notagain.slave')      
 
         # recap
-        #print "\n--> List of commands:"
-        #for command in commands:
-        #    print command
+        print "\n--> List of commands:"
+        for command in commands:
+            print command
         
         # go (amiga only)
 #        print "\n--> Performing jobs"
@@ -522,7 +618,200 @@ class whdloadWebProxyDemos:
             
         
         return
-   
+
+    def parseRefsCached(self,allow=["demos","ctros","mags","apps","games"]):
+        s = self.cacheGet(self.url_refs)
+        self.parseRefs(s,allow=allow)
+        self.saveDict()
+
+    def parseRefs(self, string, debug=True, allow=["demos","ctros","mags","apps"]):
+        lines = string.splitlines()
+        
+        iscommentblocks=False       # True while scanning comment lines
+        lastlinewascomment=False    # non-commment lines will trigger a new block
+        numcommentblocks=0          # counter for simple check
+        hadplaceholder=False        # placeholder-block between first and second comment
+        placeholderdone=False       # True after placeholder-block has been done, allows for speedup with real data
+        
+        for line in lines:
+            if line.startswith("#"):
+                # comments
+                if lastlinewascomment==False:
+                    iscommentblocks=True
+                    lastlinewascomment=True
+                    # when placeholders are done, we only expect comment and data-lines
+                    if hadplaceholder:
+                        placeholderdone=True
+                if debug:
+                    print line
+            else:
+                if lastlinewascomment:
+                    # notice block changes from comment to data
+                    numcommentblocks += 1
+                    lastlinewascomment=False
+
+                # data-line
+                if not placeholderdone:
+                    # placeholder/assign block
+                    elems = line.split(":=")
+                    if debug:
+                        print elems, len(elems)
+                    if len(elems)!=2:
+                        print "*** Warning: unknown line-format: %s" % line
+                        break
+                    else:
+                        # this is a placeholder line with ":=", e.g. "whdload:=http://www.whdload.de/whdload/images/"
+                        hadplaceholder=True
+                        self.placeholder[elems[0]]=elems[1] # assign placeholder to dictionary
+                else:                                             
+                    # actual data-lines about games and demos
+                    '''
+                    expected format, seperated by "#":
+                    # database
+                    # column contents
+                    #   0	category (demos/games/mags/ctros)
+                    #   1	basename of install archive, is together with category the primary key
+                    #   2	full name of entity, multiple names separated with '*'
+                    #   3	vendor
+                    #   4	install author, multiple separated with ','
+                    #   5	images, multiple separated with ','
+                    #   6	hol ids, multiple separated with ',', not for update on hol with prefix '!'
+                    #   7	lemon ids, multiple separated with ',', not for update on lemon with prefix '!'
+                    #   8	bitworld ids, multiple separated with ','
+                    #   9	ada ids, multiple separated with ','
+                    #  10	pouet ids, multiple separated with ','
+                    '''
+                    elems= line.split("#")
+                    if len(elems)!=11:
+                        print "*** Warning: line has %d instead of 11 elements: %s" %(len(elems),line)
+                    else:
+                        category = elems[0]
+                        basename = elems[1]     # is together with category the primary key
+                        name = elems[2]   # multiple names separated with '*'
+                        vendor = elems[3]
+                        iauthor = elems[4]      # multiple separated with ','
+                        images = elems[5]       # multiple separated with ','
+                        id_hol = elems[6]
+                        id_lemon = elems[7]
+                        id_bitworld = elems[8]
+                        id_ada = elems[9]
+                        id_pouet = elems[10]
+
+                        if len(images)!=0:
+                            has_image = True
+                        else:
+                            has_image = False
+                        
+                        if category == "demos":
+                            if len(images)==0:
+                                print "*** Warning: no images for: %s" % name
+                            else:
+                                if name == "Roots":
+                                    print line
+                                    print "category: %s\nbasename: %s\nname: %s\nvendor: %s\niauthor: %s\nimages: %s\nid_hol: %s\nid_lemon: %s\nid_bitworld: %s\nid_ada: %s\nid_pouet: %s" %(category, basename, name, vendor, iauthor, images, id_hol, id_lemon, id_bitworld, id_ada, id_pouet)
+                        if category == "games":
+                            if len(images)!=0:
+                                #print "*** Wow: images for: %s" % name
+                                pass
+
+                        # store entity meta (demos only atm)
+                        #if category == "demos":
+                        if (category in allow) and has_image:
+                            install = basename+".lha"
+                            info = basename+".html"
+                            path = category+"/"+install
+                            url=urlparse.urljoin(self.url_whdload,path)
+                            #url=os.path.join(self.url_whdload,category,install)
+                            s= self.cacheGet(url)
+                            #print "downloading: %s" %url
+                        
+                            '''
+                            s= self.cacheGet(os.path.join(self.url_path,install))
+                            # for easier reuse in pyshell
+                            self.lastt = t
+                            
+                            # get product name as of whdload page(not validated for amiga compatibility as a filename, might have / and & and () in it)
+                            prodname = a[0].getText()
+                            if debug:
+                                print "  "+ prodname
+        
+                            # try to be clever about required images (which are not uniformly declared on the website)
+                            images = self.buildImagesMeta(prodname, a.pop().get("href"))
+                            
+                            # fill meta data structure
+                            meta = {}
+                            meta["prodname"]=prodname
+                            meta["groupname"]="?"
+                            meta["fromindex"]=docname
+                            meta["info"]=info
+                            meta["install"]=install
+                            meta["images"]=images
+                            meta["infoparsed"]=False
+                            self.prods[prodname] = meta
+                            
+                                                    category = elems[0]
+                        basename = elems[1]     # is together with category the primary key
+                        name = elems[2]   # multiple names separated with '*'
+                        vendor = elems[3]
+                        iauthor = elems[4]      # multiple separated with ','
+                        images = elems[5]       # multiple separated with ','
+                        id_hol = elems[6]
+                        id_lemon = elems[7]
+                        id_bitworld = elems[8]
+                        id_ada = elems[9]
+                        id_pouet = elems[10]
+                            '''
+                        
+                            prodname = name
+                            images = self.buildImagesMeta(prodname, images)
+                            # fill meta data structure
+                            meta = {}
+                            meta["category"]=category
+                            meta["basename"]=basename
+                            meta["prodname"]=prodname
+                            meta["name"]=name
+                            meta["vendor"]=vendor
+                            meta["iauthor"]=iauthor
+                            meta["id_hol"]=id_hol
+                            meta["id_lemon"]=id_lemon
+                            meta["id_bitworld"]=id_bitworld
+                            meta["id_ada"]=id_ada
+                            meta["id_pouet"]=id_pouet
+                            
+                            meta["fromindex"]="refs.txt"
+                            meta["info"]=info
+                            meta["install"]=install
+                            meta["images"]=images
+                            meta["infoparsed"]=False
+                            
+                            # quick hack
+                            if len(images)>0:
+                                self.prods[prodname] = meta
+                                # count some stats
+                                self.dh.countToDict(self.stat_category, category)
+                                self.dh.countToDict(self.stat_vendor, vendor)
+                                self.dh.countToDict(self.stat_iauthor, iauthor)
+                        
+                            else:
+                                if debug:
+                                    print "*** Warning: late reject due to {}: %s" % prodname
+                            if debug:
+                                if prodname == "Roots":
+                                    print meta
+                                    
+                        else:
+                            if debug:
+                                #print "*** Skipping: %s" % name
+                                pass
+                                        
+            
+        if debug:
+            print "\n\nnumcommentblocks: %d" % numcommentblocks
+            #print "\nplaceholders= %s" % self.placeholder
+            print "\ncategories: %s" % self.stat_category
+            #print "\nvendors: %s" % self.stat_vendor # could be used to list by group/vendor
+            #print "\nimage authors: %s" % self.stat_iauthor
+                
 
 def test(demo,debug=False,verbose=False):
     has = demos.hasDemo(demo)
@@ -534,13 +823,15 @@ def test(demo,debug=False,verbose=False):
         # try to install
         demos.install(demo, debug=debug, verbose=verbose)
         
-
+def test2():
+    self.parseRefsCached()
+    self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.04, WHDLoad Install Manager by Leif Oppermann (17.10.2013)"
+print "Wim.py v0.05, WHDLoad Install Manager by Leif Oppermann (19.10.2013)"
 #print "  automates your WHDLoad installation chores"
 
-optlist, args = getopt.getopt(sys.argv[1:],'i:vlbc')
+optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrt')
 if len(optlist)==0:
     print "what to do?"
     sys.exit()
@@ -553,8 +844,19 @@ demos = whdloadWebProxyDemos()
 for o, a in optlist:
     print o, a
 
+    if o== "-r":
+        print "  parseRefs()"
+        demos.parseRefsCached()
+        sys.exit()
+
     if o== "-l":
-        print demos.getKnownDemos()
+        print "  list known %s" % a
+        demos.getKnownEntities(a)
+        sys.exit()
+
+    if o== "-s":
+        print "  list stats" % a
+        demos.getStats()
         sys.exit()
 
     if o == "-v":
@@ -566,13 +868,14 @@ for o, a in optlist:
         demos.buildTables(recursive=True)
         sys.exit()
 
-#    if o == "-c":
-        #print "  capabilities are: 'urllib'-%s, 'bs4'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"))
-
-
-    if o == "-i":
+    if o == "-t":
         #print "  install: %s" % a
-        test(a,debug=False,verbose=False)
+        demos.getStats()
+
+    #    if o == "-c":
+    #print "  capabilities are: 'urllib'-%s, 'bs4'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"))
+
+
 
 
 # noch nicht unterstuetzt:
