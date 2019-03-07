@@ -14,9 +14,47 @@
 #            than Python 2.7.4 at work. time to upgrade I reckon
 # 19.10.13 - v0.05, adding parseRefs, bye bye beautiful soup
 #          - checks for supported images and types before storing in brain (demos, games, ctros, apps, mags)
-#          - pickle instead of dict
 #          - renamed getKnownDemos to getKnownEntitites which takes in categories, e.g. games or demos
 # 19.10.13 - v0.06, added save format to brain as a dict with "prods" and "stats" etc.
+#          - pickle instead of dict
+# 20.10.13 - v0.07, added support for corrections.dict which allows providing fixed to the brain-file, e.g. for supplying links (test with Arte and Katakis)
+#          - removed functions parseIndexAll, parseIndexAllv
+#          - setVariables() for debug and verbose stats, linked to -v option
+#          - stats of failure sources in buildimagesmeta. check with "wim.py -rvc"
+#          - changed primarykey from str(name) to str((category, basename)), uncovering lots of megademos
+#          - improved install() do be more clever with searchname matching (e.g. Arte, Sanity_Arte, ('demos', 'Sanity_Arte')) all pass, and Megademo lists matching megademos
+#          - made basename and name search lowercase
+# 22.10.13 - lowercase search for primary key in install()
+
+
+# done>
+
+# todo:
+#       - autodetect rawdic/dic install (find "(set #program "DIC")" , or "(set #program "RawDIC")" in install)
+
+#     - devise switch for different install methods
+#       - make Katakis work (1 disk adf in zip advanced case)
+#       - make desert dreams work (2 disk simple dms)
+
+#       - seperate function for building stats
+#       - fix stats upon recreation
+
+#       - create dirs as needed, unpack there, support removing (otherwise no package manager)
+#       - patch .dm typo for Megademo Excellence (what is the correct name for the patch list)
+#       - fix error line 723 in cleanRefsCached (self.dh.countToDict(self.errors,"removed for missing images '%s'" % self.brain["prods"][name]["images"]))
+#       - make lha work
+#       - make lzx work
+#       - make zip work
+#       - make adf work
+
+#       - -x for execute option
+
+#       - use md5 or other hash to verify and find disk images
+#       -- seen as in hash
+#       - help verify / install the right software (lha, lzx, rawdic, dic, patcher, installer, quite a list :)
+
+#       - investigate python lha depacking (e.g. http://trac.neotitans.net/wiki/lhafile or http://code.google.com/p/python-libarchive/)
+#       -- lhafile install: SET VS90COMNTOOLS=%VS100COMNTOOLS%, easy_install http://svn.neotitans.net/lhafile/ works on pc!
 
 
 import os,sys,getopt,time
@@ -38,7 +76,15 @@ except:
     config["has_boolean"]=False
 
 # global options that can be modified via the command line interface
-debug=False
+g_debug=False
+g_verbose=False
+
+have_b=False
+have_c=False
+have_l=False
+have_r=False
+have_s=False
+have_i=False
 
 try:
     from bs4 import BeautifulSoup
@@ -63,18 +109,18 @@ else:
 def q(cond, on_true, on_false):
     return {True: on_true, False: on_false}[cond is True]
 
-class whdloadWebProxyDemos:
+class whdloadProxy:
 
-    url_all= "http://www.whdload.de/demos/all.html"
-    url_allv = "http://www.whdload.de/demos/allv.html"
-    url_path = "http://www.whdload.de/demos/" # deprecated since 0.04
+    #url_all= "http://www.whdload.de/demos/all.html"
+    #url_allv = "http://www.whdload.de/demos/allv.html"
+    #url_path = "http://www.whdload.de/demos/" # deprecated since 0.04
+
     url_whdload = "http://www.whdload.de/"
-    
     url_refs = "http://whdload.de/db/refs.txt"
     placeholder={}
 
     cachedir = "cache"
-    amidisk = "ff0:"
+    #amidisk = "ff0:"
     tempdir = "t:"
     isAmiga = -1
     
@@ -83,7 +129,11 @@ class whdloadWebProxyDemos:
     #prods = {}  # results will go here
     brain = {}  # results will go here
     dh=None
-        
+    
+    debug=False
+    verbose=False
+    errors={}
+    
     def __init__(self):
         t1=time.clock()
         self.dh=dicthelpers()
@@ -98,6 +148,13 @@ class whdloadWebProxyDemos:
         t2=time.clock()
         print "done in %.2f seconds." % (t2-t1)
 
+    def setVariables(self, debug=False, verbose=False):
+        '''
+        external interface for internal state variables
+        '''
+        self.debug=debug
+        self.verbose=verbose
+    
     def checkConfig(self, verbose=False):
         '''
         Checks if platform can run buildtables with Bs4 (eg win32), or not (amiga)
@@ -141,8 +198,8 @@ class whdloadWebProxyDemos:
         return okversion
         
     def saveDict(self):
-        #self.dh.saveDictionary(repr(self.prods),"brain.dict")
-        print "***PICKLING"
+        self.dh.saveDictionary(repr(self.brain),"brain.dict")
+        #print "***PICKLING"
         filehandle = open("brain.pickle","wb")
         pickle.dump(self.brain, filehandle)
         filehandle.close()
@@ -198,72 +255,6 @@ class whdloadWebProxyDemos:
                 
         return content    
     
-    def parseIndexAll(self, recursive=False, debug=False):
-        s = self.cacheGet(self.url_all)
-        docname = os.path.basename(self.url_all)
-        # parse html
-        w = BeautifulSoup(s)
-        
-        string =  "Parsing index '%s' with title '%s' .. " % (docname,w.title.string)
-        sys.stdout.write(string)
-        
-        # collect table rows
-        tr= w.find_all("tr")
-        print "found %d entries" % (len(tr))
-        
-            
-        # iterate over all listed demos and get their product html as well
-        count=1
-        for t in tr:
-            if str(t).startswith("<tr><th"):
-                if debug:
-                    print "not a demo: %s" % str(t)
-            else:
-                try:
-                    # all links in that line
-                    # first is install, second info, ... last is images
-                    a = t.find_all("a")
-                    install = a[0].get("href")
-                    info = a[1].get("href")
-                    
-                    if debug:
-                        print "%d: %s (%s)" %(count,install,info)
-                        pass
-                    
-                    # get cached copies
-                    # info
-                    #s= self.cacheGet(os.path.join(self.url_path,info))
-                    # install (needs redoing later)
-                    s= self.cacheGet(os.path.join(self.url_path,install))
-                    
-                    # for easier reuse in pyshell
-                    self.lastt = t
-                    
-                    # get product name as of whdload page(not validated for amiga compatibility as a filename, might have / and & and () in it)
-                    prodname = a[0].getText()
-                    if debug:
-                        print "  "+ prodname
-
-                    # try to be clever about required images (which are not uniformly declared on the website)
-                    images = self.buildImagesMeta(prodname, a.pop().get("href"))
-                    
-                    # fill meta data structure
-                    meta = {}
-                    meta["prodname"]=prodname
-                    meta["groupname"]="?"
-                    meta["fromindex"]=docname
-                    meta["info"]=info
-                    meta["install"]=install
-                    meta["images"]=images
-                    meta["infoparsed"]=False
-                    self.brain["prods"][prodname] = meta
-                    
-                except:
-                    print "***error at %s" % str(t)
-                    print "Unexpected error:", sys.exc_info()
-                    raise
-                count += 1  
-    
     def expandPlaceholders(self, url, debug=False):
         '''
         uses self.placeholder to expand url to original state
@@ -295,12 +286,16 @@ class whdloadWebProxyDemos:
         # otherwise just return input
         return url
         
-    def buildImagesMeta(self, demo, hint, debug=False,allow=[".dms"]):
+    def buildImagesMeta(self, demo, hint, debug=False, verbose=True, allow=[".dms"]):
         '''
         consume non deterministic pointer to images and try to be clever about it
         input: last entry from the line from the list of installs
         out dictionary with 
         '''
+        # quick out if images is already a dict not a str
+        if type(hint)=="dict":
+            return hint # means that it was most probably already fixed or corrected
+        
         #if demo=="Roots":
         if True:
             #print "--> parsing image locations"
@@ -310,16 +305,26 @@ class whdloadWebProxyDemos:
             seenat, filename = os.path.split(hint)
             seenat = self.expandPlaceholders(seenat)
             if len(filename)==0:
-                if debug:
+                self.dh.countToDict(self.errors,"no direct link")
+                if verbose:
                     print "*** Warning: no direct link to: %s (%s)" % (demo,hint)
-            
+                return {}
             # get suffix
             trash, ext = os.path.splitext(hint)
             ext=ext.lower()
+
+            if len(ext)==0:
+                self.dh.countToDict(self.errors,"no direct link")
+                if verbose:
+                    print "*** Warning: no direct link to: %s (%s)" % (demo,hint)
+                return {}
+
             
             # check for allowed extensions
             if ext not in allow:
-                print "*** Warning: unsupported extension '%s' for '%s'" % (ext,demo)
+                self.dh.countToDict(self.errors,"unsupported extension '%s'" % ext)
+                if verbose:
+                    print "*** Warning: unsupported extension '%s' for '%s' ('%s','%s')" % (ext,demo,hint,seenat)
             
             if debug:
                 print demo, seenat, filename, ext
@@ -346,93 +351,14 @@ class whdloadWebProxyDemos:
             return {}
         
         
-    def parseIndexAllV(self, recursive=False, debug=True):
-        s = self.cacheGet(self.url_allv)
-        docname = os.path.basename(self.url_allv)
-        # parse html
-        w = BeautifulSoup(s)
-        
-        string =  "Parsing index '%s' with title '%s' .. " % (docname,w.title.string)
-        sys.stdout.write(string)
-        
-        # collect table rows
-        tr= w.find_all("tr")
-        print "found %d entries" % (len(tr))
-        
-        
-        
-        # iterate over all listed demos and get their product html as well
-        count=1
-        for t in tr:
-            if str(t).startswith("<tr><th"):
-                if debug:
-                    print "not a demo: %s" % str(t)
-            else:
-                try:
-                    # all links in that line
-                    # first is install, second info, ... last is images
-                    a = t.find_all("a")
-                    if len(a)>=2:
-                        install = a[0].get("href")
-                        info = a[1].get("href")
-                        #images = a.pop().get("href")
-                        if debug:
-                            print "%d: %s (%s)" %(count,install,info)
-                            pass
-                        
-                        # get cached copies
-                        # info
-                        #s= demos.cacheGet(os.path.join(demos.url_path,info))
-                        # install (needs redoing later)
-                        #s= demos.cacheGet(os.path.join(demos.url_path,install))
-                        
-                        # for easier reuse in pyshell
-                        self.lastt = t
-                        
-                        # get product name as of whdload page(not validated for amiga compatibility as a filename, might have / and & and () in it)
-                        groupandprodname = a[0].getText()
-                        seperator=" - "
-                        minusat = groupandprodname.find(seperator)
-                        groupname = groupandprodname[:minusat]
-                        prodname = groupandprodname[minusat+len(seperator):]                       
-
-                        if debug:
-                            print "     %s: %s" % (groupname, prodname)
-                        
-                        # try to be clever about required images (which are not uniformly declared on the website)
-                        #print a.pop().get("href")
-                        images = self.buildImagesMeta(prodname, a.pop().get("href"), debug=debug)
-                        
-                        # fill meta data structure
-                        meta = {}
-                        meta["prodname"]=prodname
-                        meta["groupname"]=groupname
-                        meta["fromindex"]=docname
-                        meta["info"]=info
-                        meta["install"]=install
-                        meta["images"]=images
-                        meta["infoparsed"]=False                        
-                        self.brain["prods"][prodname] = meta
-                        
-                        # debug
-                        #if prodname=="Face Another Day":
-                        #    print "bork at count: %d" % count
-                        
-                        # slow, can be done on request
-                        if recursive:
-                            self.parseInfo(prodname,debug=False)
-                    
-                except:
-                    print "***error at %s" % str(t)
-                count += 1  
-  
     def parseInfo(self, demoname, debug= True):
         '''
         Parses info page of prod demoname upon request
         '''
         if config["has_bs4"]==False:
             return
-        s = self.cacheGet(self.url_path + self.brain["prods"][demoname]["info"])
+        #s = self.cacheGet(self.url_path + self.brain["prods"][demoname]["info"])
+        s = self.cacheGet(self.url_whdload + self.brain["prods"][demoname]["category"] +self.brain["prods"][demoname]["info"])
         # parse html
 
         if debug:
@@ -492,7 +418,8 @@ class whdloadWebProxyDemos:
         self.stat_iauthor={}
 
         '''
-        print "Known categories: %s" % str(self.brain["stats"]["category"])
+        print "Common errors: %s" % str(self.errors)
+        print "\nKnown categories: %s" % str(self.brain["stats"]["category"])
         
     
     def buildTables(self, recursive=False, debug=False):
@@ -502,21 +429,71 @@ class whdloadWebProxyDemos:
         #self.parseIndexAll(recursive=recursive, debug=False)
         #self.parseIndexAllV(recursive=recursive, debug=False)
         self.parseRefsCached()
-        
-        
-    def install(self, demoname, debug=False, verbose=False):
+          
+    def install(self, searchname, debug=False, verbose=False):
         '''
         install a demo, getting all required linked images, etc
         currently works with .dms 1 disk 1 image only
         returns True on success and False otherwise
-        '''      
-        data = self.brain["prods"][demoname]
-        print "---> Installing %s by %s" % (demoname, data["vendor"])
+        '''
+        
+        # find right entity
+        # try 1: searchname is (category/basename)
+        if self.brain["prods"].has_key(searchname):
+            print "Exact match on primary key: %s" % searchname
+            entityname = searchname
+        
+        else:
+            # try : allow capitalization typos, i.e. check lower case
+            prodnames=self.brain["prods"].keys()
+            foundlower=False
+            searchnamelow = searchname.lower()
+            for prod in prodnames:
+                if searchnamelow==prod.lower():
+                    foundlower=True
+                    print "Match on primary key: %s" % searchname
+                    break
+            if foundlower:
+                entityname=prod
+            else:
+                # try 3: searchname is basename or name (make sure there is no more than one, as in "Megademo")
+                searchnamelow=searchname.lower()
+                matched_basenames = []
+                matched_names=[]
+                for key in self.brain["prods"].keys():
+                    prod = self.brain["prods"][key]
+                    basename = prod["basename"].lower()
+                    name = prod["name"].lower()
+                    if searchnamelow==basename:
+                        matched_basenames.append(key)
+                    if searchnamelow==name:
+                        matched_names.append(key)
+                # check results
+                
+                # if 1 matched name, than that is the one
+                if len(matched_names)==1:
+                    entityname=matched_names[0]
+                    print "Match on name: %s" % searchname
+
+                elif len(matched_basenames)==1:
+                    entityname=matched_basenames[0]
+                    print "Match on basename: %s" % searchname
+
+                else:
+                    print "*** Error: your searchname '%s' yielded no exact match:" % searchname
+                    print "on primary key: []"
+                    print "on basenames: %s" % matched_basenames
+                    print "on names: %s" % matched_names
+                    print "Stop."
+                    sys.exit()             
+        
+        data = self.brain["prods"][entityname]
+        print "---> Installing %s by %s" % (data["name"], data["vendor"])
 
         commands=[] # these will be executed one after another on target system
 
         # make sure to have metadata
-        meta = self.getMeta(demoname)
+        meta = self.getMeta(entityname)
         if meta["infoparsed"]!= True:
             print "*** Warning: no parsed info for this"
 
@@ -626,7 +603,7 @@ class whdloadWebProxyDemos:
         self.parseRefs(s,allow=allow)
         self.saveDict()
 
-    def parseRefs(self, string, debug=True, allow=["demos","ctros","mags","apps"]):
+    def parseRefs(self, string, debug=False, allow=["demos","ctros","mags","apps"]):
         lines = string.splitlines()
         
         iscommentblocks=False       # True while scanning comment lines
@@ -635,7 +612,12 @@ class whdloadWebProxyDemos:
         hadplaceholder=False        # placeholder-block between first and second comment
         placeholderdone=False       # True after placeholder-block has been done, allows for speedup with real data
         
+        # get corrections.dict handy
+        corrections=eval(open("corrections.dict").read())
+        print "loaded corrections.dict: %s" %corrections      
+        
         for line in lines:
+            has_corrections=False # does not mean the file, but will be True is an entity like "Arte" has corrections                      
             if line.startswith("#"):
                 # comments
                 if lastlinewascomment==False:
@@ -699,26 +681,13 @@ class whdloadWebProxyDemos:
                         id_ada = elems[9]
                         id_pouet = elems[10]
 
-                        if len(images)!=0:
-                            has_image = True
-                        else:
-                            has_image = False
+                        # apply corrections, step 1
+                        if corrections.has_key((category, basename)):
+                            has_corrections = True
                         
-                        if category == "demos":
-                            if len(images)==0:
-                                print "*** Warning: no images for: %s" % name
-                            else:
-                                if name == "Roots":
-                                    print line
-                                    print "category: %s\nbasename: %s\nname: %s\nvendor: %s\niauthor: %s\nimages: %s\nid_hol: %s\nid_lemon: %s\nid_bitworld: %s\nid_ada: %s\nid_pouet: %s" %(category, basename, name, vendor, iauthor, images, id_hol, id_lemon, id_bitworld, id_ada, id_pouet)
-                        if category == "games":
-                            if len(images)!=0:
-                                #print "*** Wow: images for: %s" % name
-                                pass
-
                         # store entity meta (demos only atm)
                         #if category == "demos":
-                        if (category in allow) and has_image:
+                        if (category in allow): # and has_image: #after applied corrections
                             install = basename+".lha"
                             info = basename+".html"
                             path = category+"/"+install
@@ -726,46 +695,9 @@ class whdloadWebProxyDemos:
                             #url=os.path.join(self.url_whdload,category,install)
                             s= self.cacheGet(url)
                             #print "downloading: %s" %url
-                        
-                            '''
-                            s= self.cacheGet(os.path.join(self.url_path,install))
-                            # for easier reuse in pyshell
-                            self.lastt = t
-                            
-                            # get product name as of whdload page(not validated for amiga compatibility as a filename, might have / and & and () in it)
-                            prodname = a[0].getText()
-                            if debug:
-                                print "  "+ prodname
-        
-                            # try to be clever about required images (which are not uniformly declared on the website)
-                            images = self.buildImagesMeta(prodname, a.pop().get("href"))
-                            
-                            # fill meta data structure
-                            meta = {}
-                            meta["prodname"]=prodname
-                            meta["groupname"]="?"
-                            meta["fromindex"]=docname
-                            meta["info"]=info
-                            meta["install"]=install
-                            meta["images"]=images
-                            meta["infoparsed"]=False
-                            self.prods[prodname] = meta
-                            
-                                                    category = elems[0]
-                        basename = elems[1]     # is together with category the primary key
-                        name = elems[2]   # multiple names separated with '*'
-                        vendor = elems[3]
-                        iauthor = elems[4]      # multiple separated with ','
-                        images = elems[5]       # multiple separated with ','
-                        id_hol = elems[6]
-                        id_lemon = elems[7]
-                        id_bitworld = elems[8]
-                        id_ada = elems[9]
-                        id_pouet = elems[10]
-                            '''
-                        
+                                               
                             prodname = name
-                            images = self.buildImagesMeta(prodname, images)
+                            
                             # fill meta data structure
                             meta = {}
                             meta["category"]=category
@@ -783,23 +715,71 @@ class whdloadWebProxyDemos:
                             meta["fromindex"]="refs.txt"
                             meta["info"]=info
                             meta["install"]=install
-                            meta["images"]=images
                             meta["infoparsed"]=False
+
+                            # apply corrections step 2
+                            touchedimages=False
+                            if has_corrections:
+                                print "*** Info: applying corrections for %s (%s), i.e. %s" %(basename, category, corrections[(category,basename)].keys())
+                                for key in corrections[(category,basename)].keys():
+                                    if key=="images":
+                                        touchedimages=True
+                                        print "touched %s of %s" % (key,name)
+                                        #sys.exit()
+                                    meta[key]=corrections[(category,basename)][key]
+                                    print meta[key]
+                                meta["fromindex"]="corrections.dict"
                             
-                            # quick hack
-                            if len(images)>0:
-                                self.brain["prods"][prodname] = meta
-                                # count some stats
-                                self.dh.countToDict(self.brain["stats"]["category"], category)
-                                self.dh.countToDict(self.brain["stats"]["vendor"], vendor)
-                                self.dh.countToDict(self.brain["stats"]["iauthor"], iauthor)
+                            if not touchedimages:
+                                #print images
+                                images = self.buildImagesMeta(prodname, images,debug=self.debug,verbose=self.verbose)
+                                meta["images"]=images
+                            touchedimages=False
+                            
+                            if name=="Arte":
+                                print meta
+                            if has_corrections:
+                                print meta
+                                print
+                            
+                            has_corrections=False   # reset for next loop
+
+                                
+                            # should be moved to after applied corrections!
+                            #if len(images)!=0:
+                            #    has_image = True
+                            #else:
+                            #    has_image = False
                         
-                            else:
-                                if debug:
-                                    print "*** Warning: late reject due to {}: %s" % prodname
-                            if debug:
-                                if prodname == "Roots":
-                                    print meta
+                            #if category == "demos":
+                            #    if not has_image and debug:
+                            #        print "*** Warning: no images for: %s" % name
+                            #    #else:
+                            #        #if name == "Roots":
+                            #        #    print line
+                            #        #    print "category: %s\nbasename: %s\nname: %s\nvendor: %s\niauthor: %s\nimages: %s\nid_hol: %s\nid_lemon: %s\nid_bitworld: %s\nid_ada: %s\nid_pouet: %s" %(category, basename, name, vendor, iauthor, images, id_hol, id_lemon, id_bitworld, id_ada, id_pouet)
+                            #if category == "games":
+                            #    if len(images)!=0:
+                            #        #print "*** Wow: images for: %s" % name
+                            #        pass        
+                            # quick hack
+                            #if len(str(meta["images"]))>2:   #{}
+                            
+                            # construct primary key in a commandline-friendly fashion
+                            primary = "%s/%s" % (category, basename)
+                            
+                            self.brain["prods"][primary] = meta
+                            # count some stats (todo: avoid double counting -> seperate function)
+                            self.dh.countToDict(self.brain["stats"]["category"], category)
+                            self.dh.countToDict(self.brain["stats"]["vendor"], vendor)
+                            self.dh.countToDict(self.brain["stats"]["iauthor"], iauthor)
+                        
+                            #else:
+                            #    #if debug:
+                            #    print "*** Warning: cleaning due to missing images: %s (%s)" % (prodname,meta["images"])
+                            #if debug:
+                            #    if prodname == "Roots":
+                            #        print meta
                                     
                         else:
                             if debug:
@@ -814,27 +794,69 @@ class whdloadWebProxyDemos:
             #print "\nvendors: %s" % self.stat_vendor # could be used to list by group/vendor
             #print "\nimage authors: %s" % self.stat_iauthor
                 
+    def cleanRefsCached(self, debug=True,verbose=False):
+        '''
+        removes all entities without images, recalc stas and saves the brain-file
+        '''
+        # step over all prods
+        #print "---> Cleaning"
+        #self.getStats()
+        newdict={}
+        newdict["prods"]={}
+        newdict["stats"]={}
+        
+        #dicts for stats, filled by parseRefs, reachable from getStats()
+        newdict["stats"]["category"]={}
+        newdict["stats"]["vendor"]={}
+        newdict["stats"]["iauthor"]={}
+                
+        for name in self.brain["prods"]:
+            #print self.brain["prods"][name]
+            if len( str(self.brain["prods"][name]["images"]) )>2:
+                # quick check okay, i.e. more than "{}"
+                # copy over entry
+                #print "keep %s" % name
+                newdict["prods"][name]=self.brain["prods"][name]
+                #print self.brain["prods"][name]["category"]
+                self.dh.countToDict(newdict["stats"]["category"], self.brain["prods"][name]["category"])
+                self.dh.countToDict(newdict["stats"]["vendor"], self.brain["prods"][name]["vendor"])
+                self.dh.countToDict(newdict["stats"]["iauthor"], self.brain["prods"][name]["iauthor"])
+            else:
+                # remove this prod from brain, i.e. do not copy
+                #print "remove %s" %name
+                #sys.exit()
+                self.dh.countToDict(self.errors,"missing images")
+                if verbose:
+                    print "remove %s (%s)" % (name,self.brain["prods"][name]["images"])
+                pass
+        
+        # set newdict as brain
+        self.brain = newdict
+        self.getStats()
+        self.saveDict()
+        
 
 def test(demo,debug=False,verbose=True):
-    has = demos.hasDemo(demo)
-    print "has: %s" % has
+    #has = demos.hasDemo(demo)
+    #print "has: %s" % has
+    print
     if debug:
         print "%s, %s" % (demo, has)
-    if has:
-        if verbose:
-            print "  %s" % demos.getMeta(demo, debug=debug)
-        # try to install
-        demos.install(demo, debug=debug, verbose=verbose)
+    #if has:
+    if verbose:
+        print "  %s" % demos.getMeta(demo, debug=debug)
+    # try to install
+    demos.install(demo, debug=debug, verbose=verbose)
         
 def test2():
     self.parseRefsCached()
     self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.06, WHDLoad Install Manager by Leif Oppermann (19.10.2013)"
+print "Wim.py v0.07, WHDLoad Install Manager by Leif Oppermann (20.10.2013)"
 #print "  automates your WHDLoad installation chores"
 
-optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrt')
+optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrs')
 if len(optlist)==0:
     print "what to do?"
     sys.exit()
@@ -842,48 +864,87 @@ if len(optlist)==0:
 #print optlist, args       
 
 # instantiate
-demos = whdloadWebProxyDemos()
+demos = whdloadProxy()
 
 for o, a in optlist:
     print o, a
 
     if o== "-r":
         print "  parseRefs()"
-        demos.parseRefsCached()
-        sys.exit()
+        have_r=True
+        #demos.parseRefsCached()
+
+    if o== "-c":
+        print "  cleanRefs()"
+        have_c=True
+        #demos.cleanRefsCached()
 
     if o== "-l":
         print "  list known %s" % a
-        demos.getKnownEntities(a)
-        sys.exit()
+        have_l = True
+        #demos.getKnownEntities(a)
+        #sys.exit()
 
     if o== "-s":
-        print "  list stats" % a
-        demos.getStats()
-        sys.exit()
+        have_s=True
+        #print "  list stats" % a
+        #demos.getStats()
+        #sys.exit()
 
     if o == "-v":
         print "  verbose"
-        debug=True
+        g_debug=True
+        g_verbose=True
+        demos.setVariables(debug=g_debug, verbose=g_verbose)
 
     if o == "-b":
         print "  build tables"
-        demos.buildTables(recursive=True)
-        sys.exit()
+        have_b = True
+        #demos.buildTables(recursive=True)
+        #sys.exit()
 
-    if o == "-t":
-        #print "  install: %s" % a
-        demos.getStats()
+    #if o == "-t":
+        ##print "  install: %s" % a
+        #demos.getStats()
 
     if o == "-i":
+        have_i=True
         #print "  install: %s" % a
-        test(a,debug=False,verbose=False)
+        #test(a,debug=False,verbose=False)
         
     #    if o == "-c":
     #print "  capabilities are: 'urllib'-%s, 'bs4'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"))
 
 
+# execute actions
+if have_r:
+    print "\n---> Parsing References"
+    demos.parseRefsCached()
+if have_b:
+    print "\n---> Building Tables"
+    demos.buildTables(recursive=True)
+    sys.exit()
 
+#todo: whats the difference between r and b?
+
+if have_c:
+    print "\n---> Cleaning"
+    demos.cleanRefsCached()
+
+if have_s:
+    print "\n---> Stats"
+    demos.getStats()
+
+if have_l:
+    print "\n---> list"
+    demos.getKnownEntities(a)
+    sys.exit()
+
+if have_i:
+    #print "\n---> Installing"
+    test(a,debug=False,verbose=False)
+
+#print demos.brain
 
 # noch nicht unterstuetzt:
 # Audio Violation - guter Test for rawdic Datei extrahierung
@@ -892,7 +953,6 @@ for o, a in optlist:
 # Dance Diverse Vol.1, Delirium, most Megademos - error 205
 # Digital Complexity - nicht Disk.1 sondern data (und dann fehler)
 # Project Techno - Archive Fehler? go kaputt
-# Roots - noch nicht im Index
 # The Simpsons - .lha lag nicht im cahcedir
 
 
