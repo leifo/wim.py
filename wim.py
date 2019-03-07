@@ -25,22 +25,24 @@
 #          - improved install() do be more clever with searchname matching (e.g. Arte, Sanity_Arte, ('demos', 'Sanity_Arte')) all pass, and Megademo lists matching megademos
 #          - made basename and name search lowercase
 # 22.10.13 - lowercase search for primary key in install()
+# 24.10.13 - multiple disk install supported (desert dream works)
 
 
 # done>
+#       - make desert dreams work (2 disk simple dms
+#       - patch .dm typo for Megademo Excellence (what is the correct name for the patch list)
 
 # todo:
 #       - autodetect rawdic/dic install (find "(set #program "DIC")" , or "(set #program "RawDIC")" in install)
 
 #     - devise switch for different install methods
 #       - make Katakis work (1 disk adf in zip advanced case)
-#       - make desert dreams work (2 disk simple dms)
+#       - make devils' key work (3 disk 6 dms does not work, found 3 disk 3 dms, still needs rawdic)
 
 #       - seperate function for building stats
 #       - fix stats upon recreation
 
 #       - create dirs as needed, unpack there, support removing (otherwise no package manager)
-#       - patch .dm typo for Megademo Excellence (what is the correct name for the patch list)
 #       - fix error line 723 in cleanRefsCached (self.dh.countToDict(self.errors,"removed for missing images '%s'" % self.brain["prods"][name]["images"]))
 #       - make lha work
 #       - make lzx work
@@ -48,6 +50,7 @@
 #       - make adf work
 
 #       - -x for execute option
+#       - seperate cache and temp dirs
 
 #       - use md5 or other hash to verify and find disk images
 #       -- seen as in hash
@@ -487,16 +490,19 @@ class whdloadProxy:
                     print "Stop."
                     sys.exit()             
         
+        # at this point we know what user wants, i.e. the entityname
         data = self.brain["prods"][entityname]
-        print "---> Installing %s by %s" % (data["name"], data["vendor"])
+        print "---> Installing %s by %s (%s)" % (data["name"], data["vendor"], entityname)
 
         commands=[] # these will be executed one after another on target system
 
         # make sure to have metadata
         meta = self.getMeta(entityname)
-        if meta["infoparsed"]!= True:
-            print "*** Warning: no parsed info for this"
-
+        #if meta["infoparsed"]!= True:
+        #    print "*** Info: no parsed info for this"
+        #else:
+        #    print "*** Info: Meta: %s" % meta
+            
         '''
         {'info': 'Sanity_NotAgain.html', 'prodname': u'Not Again', 'infoparsed': True, 'fromindex': 'all.html', 'groupname':
 '?', 'install': 'Sanity_NotAgain.lha',
@@ -507,23 +513,26 @@ class whdloadProxy:
             print images
         # number of disks
         numdisks = len(images)
-        if debug:
-            print "Number of disks: %d" % numdisks
+        print "Number of disks: %d" % numdisks
 
+        # todo: seperate get file from installation handler
+            
         # iterate over disks
         if numdisks>0:
             for i in range(numdisks):
                 disknum=i+1
+                multiimages=False   # True if more than 1 image per disk
                 reqimages = len(images[disknum])
                 print "Disk %d requires %d images" % (disknum, reqimages)
                 if reqimages >1:
+                    multiimages = True
                     print "*** Error: Cannot currently handle the case of multiple images per disk"
                     return False
                 image = images[disknum][0]
                 
                 # check for dms
                 if image["type"]!=".dms":
-                    print "*** Error: Cannot currently handle anything else than .dms"
+                    print "*** Error: Cannot currently handle anything else than .dms but this is of type '%s'" % image["type"]
                     return False
                 print image
                 
@@ -531,7 +540,7 @@ class whdloadProxy:
                 if debug: 
                     print image["seenat"],image["file"]
                 url = image["seenat"]+"/"+image["file"]
-                print "Trying to get %s from %s" % (image["file"], url)
+                print "Downloading %s from %s" % (image["file"], url)
                 self.cacheGet(url)
                 
                 # un-dms with system call
@@ -543,12 +552,18 @@ class whdloadProxy:
                 dmsline = "xdms -d %s u %s +%s" % (self.cachedir, fname,adfname)
                 if debug:
                     print "Creating %s from %s" %(adfnamefull, fname)
-    
+                    
                 #os.system(dmsline)
                 commands.append(dmsline)
+
+                # DIC produces Disk.1/2/3, etc.
+                copyline = 'copy %s/%s to "t:Disk.%s"' %(self.cachedir, adfname,disknum)        
+                commands.append(copyline)
+
         else:
-            print "*** Error: no disks found!"
-            print data
+            print "*** Info: Data==%s " % data
+            print "*** Error: no images found!"
+            print "Stop."
             sys.exit()
                       
         # unpack installer
@@ -562,10 +577,10 @@ class whdloadProxy:
         # hardcoded for Sanity
         #commands.append('cd "t:NotAgain Install"')
         
+        # moved into loop for multi-disk support
         # DIC produces Disk.1
-        copyline = 'copy %s/%s to "t:Disk.1"' %(self.cachedir, adfname)        
-        commands.append(copyline)
-        #commands.append('list "t:NotAgain Install/"')
+        #copyline = 'copy %s/%s to "t:Disk.1"' %(self.cachedir, adfname)        
+        #commands.append(copyline)
         
         # get slave mit lha
         # echo noline "whdload "
@@ -600,7 +615,7 @@ class whdloadProxy:
 
     def parseRefsCached(self,allow=["demos","ctros","mags","apps","games"]):
         s = self.cacheGet(self.url_refs)
-        self.parseRefs(s,allow=allow)
+        self.parseRefs(s,allow=allow,debug=False)
         self.saveDict()
 
     def parseRefs(self, string, debug=False, allow=["demos","ctros","mags","apps"]):
@@ -693,7 +708,7 @@ class whdloadProxy:
                             path = category+"/"+install
                             url=urlparse.urljoin(self.url_whdload,path)
                             #url=os.path.join(self.url_whdload,category,install)
-                            s= self.cacheGet(url)
+                            #s= self.cacheGet(url)
                             #print "downloading: %s" %url
                                                
                             prodname = name
@@ -724,10 +739,12 @@ class whdloadProxy:
                                 for key in corrections[(category,basename)].keys():
                                     if key=="images":
                                         touchedimages=True
-                                        print "touched %s of %s" % (key,name)
+                                        #if debug:
+                                        #    print "touched %s of %s" % (key,name)
                                         #sys.exit()
                                     meta[key]=corrections[(category,basename)][key]
-                                    print meta[key]
+                                    #if debug:
+                                    #    print meta[key]
                                 meta["fromindex"]="corrections.dict"
                             
                             if not touchedimages:
@@ -736,9 +753,9 @@ class whdloadProxy:
                                 meta["images"]=images
                             touchedimages=False
                             
-                            if name=="Arte":
-                                print meta
-                            if has_corrections:
+                            #if name=="Arte":
+                            #    print meta
+                            if has_corrections and debug:
                                 print meta
                                 print
                             
@@ -853,7 +870,7 @@ def test2():
     self.saveDict()
 
 #---get the arguments
-print "Wim.py v0.07, WHDLoad Install Manager by Leif Oppermann (20.10.2013)"
+print "Wim.py v0.08, WHDLoad Install Manager by Leif Oppermann (20.10.2013)"
 #print "  automates your WHDLoad installation chores"
 
 optlist, args = getopt.getopt(sys.argv[1:],'i:vl:bcrs')
