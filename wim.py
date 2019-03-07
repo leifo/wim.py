@@ -6,13 +6,14 @@
 #          - added allv.html, still only demos (games later), added getKnownDemos()
 #          - fixed binary download (wb)
 #          - added dms support (one disk only, yet)
-#          - working on installing the first demo (Not Again)
+#          - working on installing the first demo (Not Again) - worked fully automated at 8:53 pm
+#          - needs cleanup, make work for other dms prods, control install dirs and other heuristics, keep track of changes?
 
 import os,sys
 from lxo_helpers import dicthelpers
 
 print "Wim.py v0.03, WHDLoad Install Manager by Leif Oppermann (13.10.2013)"
-print "automates your WHDLoad installation tasks"
+print "automates your WHDLoad installation chores"
 
 # handle 3 key differences between Win32 2.7 and Amiga Python 2.0
 config = {}
@@ -453,19 +454,22 @@ class whdloadWebProxyDemos:
         # unpack installer
         iname = os.path.join(self.cachedir, data["install"])
         lhaline = "lha x -N %s %s" % (iname ,self.tempdir)
+        # "lha e -x0 -N %s #?.inf #?.slave #?README %s"%(iname ,self.tempdir)
         commands.append(lhaline)
 
         # ab hier wirds h?sslich hardcoded zum ende des tages :)
         # hardcoded for Sanity
-        commands.append('cd "t:NotAgain Install"')
+        #commands.append('cd "t:NotAgain Install"')
         
         # DIC produces Disk.1
         copyline = 'copy %s to "t:NotAgain Install/Disk.1"' %(adfname)
         commands.append(copyline)
+        #commands.append('list "t:NotAgain Install/"')
         
-        commands.append('cd "t:NotAgain Install/"')
-        commands.append('rename NotAgain.inf NotAgain.info')
-        commands.append('whdload Notagain.slave')
+        #commands.append('cd "t:NotAgain Install/"')
+        commands.append('rename "t:NotAgain Install/NotAgain.inf" "t:NotAgain Install/NotAgain.info"')
+        commands.append('list "t:NotAgain Install/"')
+        commands.append('cd "t:NotAgain Install/"\nwhdload Notagain.slave')
         # recap
         print "\n\n--> List of commands:"
         for command in commands:
