@@ -8,12 +8,14 @@
 #          - added dms support (one disk only, yet)
 #          - working on installing the first demo (Not Again) - worked fully automated at 8:53 pm
 #          - needs cleanup, make work for other dms prods, control install dirs and other heuristics, keep track of changes?
+# 16.10.13 - improved xdms line to use cachedir for saving adf
+#          - added getopt -i -l -v
+# 17.10.13 - realised that Python 2.7.0 at home returns less  results (327 vs 479) with Bs4
+#            than Python 2.7.4 at work. time to upgrade I reckon
 
-import os,sys
+import os,sys,getopt
 from lxo_helpers import dicthelpers
 
-print "Wim.py v0.03, WHDLoad Install Manager by Leif Oppermann (13.10.2013)"
-print "automates your WHDLoad installation chores"
 
 # handle 3 key differences between Win32 2.7 and Amiga Python 2.0
 config = {}
@@ -24,6 +26,9 @@ except:
     True= 1
     False = 0
     config["has_boolean"]=False
+
+# global options that can be modified via the command line interface
+debug=False
 
 try:
     from bs4 import BeautifulSoup
@@ -38,10 +43,14 @@ try:
 except:
     config["has_urllib"]=False
     
+    
+if sys.platform=="amiga":
+    config["is_amiga"]=True
+else:
+    config["is_amiga"]=False
+    
 def q(cond, on_true, on_false):
     return {True: on_true, False: on_false}[cond is True]
-
-print "Capacilities are: 'urllib'-%s, 'bs4'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"))
 
 class whdloadWebProxyDemos:
 
@@ -68,7 +77,7 @@ class whdloadWebProxyDemos:
         else:
             self.loadDict()
 
-    def checkConfig(self):
+    def checkConfig(self, verbose=False):
         '''
         Checks if platform can run buildtables with Bs4 (eg win32), or not (amiga)
         Returns True if it can, otherwise False
@@ -79,7 +88,9 @@ class whdloadWebProxyDemos:
         micro = vi[2]
         platform = sys.platform.capitalize()
 
-        print "Running Python v%d.%d.%d on %s - %s" % (major,minor,micro,platform,sys.version)
+        #print "Running Python v%d.%d.%d on %s - %s" % (major,minor,micro,platform,sys.version)
+        #print "  capabilities are: 'urllib'-%s, 'bs4'-%s, 'amiga'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"), q(config["is_amiga"],"True","False"))
+        print "  running on Python v%d.%d.%d on %s" % (major,minor,micro,platform)
         
         # check bs4 requirements
         # http://www.crummy.com/software/BeautifulSoup/ -> Beautiful Soup 4 works on both Python 2 (2.6+) and Python 3.
@@ -95,7 +106,8 @@ class whdloadWebProxyDemos:
         if okversion:
             #todo, maybe
             pass
-                
+        
+        print        
         if okversion:
             print "--> generator functionality (scrape website, build tables)"
             self.isAmiga=False
@@ -147,7 +159,7 @@ class whdloadWebProxyDemos:
                 
         return content
     
-    def parseIndexAll(self, recursive=False, debug=True):
+    def parseIndexAll(self, recursive=False, debug=False):
         s = self.cacheGet(self.url_all)
         docname = os.path.basename(self.url_all)
         # parse html
@@ -177,6 +189,7 @@ class whdloadWebProxyDemos:
                     
                     if debug:
                         print "%d: %s (%s)" %(count,install,info)
+                        pass
                     
                     # get cached copies
                     # info
@@ -212,14 +225,15 @@ class whdloadWebProxyDemos:
                     raise
                 count += 1  
     
-    def buildImagesMeta(self, demo, hint):
+    def buildImagesMeta(self, demo, hint, debug=False):
         '''
         consume non deterministic pointer to images and try to be clever about it
         input: last entry from the line from the list of installs
         out dictionary with 
         '''
-        if demo=="Not Again":
-            print "--> parsing image locations"
+        #if demo=="Not Again":
+        if True:
+            #print "--> parsing image locations"
             # one disks first, start with dms
             
             # get basename
@@ -229,13 +243,14 @@ class whdloadWebProxyDemos:
             trash, ext = os.path.splitext(hint)
             ext=ext.lower()
             
-            print demo, seenat, filename, ext
+            if debug:
+                print demo, seenat, filename, ext
             
             # only dms for the moment
             if ext!= ".dms":
                 return {}
             
-            print "still here"
+            #print "still here"
             
             # pack it up
             diskimages = {}
@@ -282,9 +297,10 @@ class whdloadWebProxyDemos:
                     if len(a)>=2:
                         install = a[0].get("href")
                         info = a[1].get("href")
-                        images = a.pop().get("href")
+                        #images = a.pop().get("href")
                         if debug:
                             print "%d: %s (%s)" %(count,install,info)
+                            pass
                         
                         # get cached copies
                         # info
@@ -300,10 +316,14 @@ class whdloadWebProxyDemos:
                         seperator=" - "
                         minusat = groupandprodname.find(seperator)
                         groupname = groupandprodname[:minusat]
-                        prodname = groupandprodname[minusat+len(seperator):]
-                        
+                        prodname = groupandprodname[minusat+len(seperator):]                       
+
                         if debug:
                             print "     %s: %s" % (groupname, prodname)
+                        
+                        # try to be clever about required images (which are not uniformly declared on the website)
+                        #print a.pop().get("href")
+                        images = self.buildImagesMeta(prodname, a.pop().get("href"), debug=debug)
                         
                         # fill meta data structure
                         meta = {}
@@ -312,6 +332,7 @@ class whdloadWebProxyDemos:
                         meta["fromindex"]=docname
                         meta["info"]=info
                         meta["install"]=install
+                        meta["images"]=images
                         meta["infoparsed"]=False                        
                         self.prods[prodname] = meta
                         
@@ -340,7 +361,8 @@ class whdloadWebProxyDemos:
             string =  "Parsing info for '%s' .. " % (demoname)
             sys.stdout.write(string)
         else:
-            sys.stdout.write(".")
+            #sys.stdout.write(".")
+            pass
                 
         w = BeautifulSoup(s)
         
@@ -381,10 +403,11 @@ class whdloadWebProxyDemos:
         '''
         Cache relevant content and parse demo list
         '''
-        self.parseIndexAll(recursive, debug=False)
-        self.parseIndexAllV(recursive, debug=False)
+        self.parseIndexAll(recursive=recursive, debug=False)
+        self.parseIndexAllV(recursive=recursive, debug=False)
+        print
         
-    def install(self, demoname, debug=False):
+    def install(self, demoname, debug=False, verbose=False):
         '''
         install a demo, getting all required linked images, etc
         currently works with .dms 1 disk 1 image only
@@ -413,48 +436,51 @@ class whdloadWebProxyDemos:
         if debug:
             print "Number of disks: %d" % numdisks
 
-        # iterate over disks        
-        for i in range(numdisks):
-            disknum=i+1
-            reqimages = len(images[disknum])
-            print "Disk %d requires %d images" % (disknum, reqimages)
-            if reqimages >1:
-                print "*** Error: Cannot currently handle the case of multiple images per disk"
-                return False
-            image = images[disknum][0]
-            
-            # check for dms
-            if image["type"]!=".dms":
-                print "*** Error: Cannot currently handle anything else than .dms"
-                return False
-            print image
-            
-            # get file
-            if debug: 
-                print image["seenat"],image["file"]
-            url = image["seenat"]+"/"+image["file"]
-            print "Trying to get %s from %s" % (image["file"], url)
-            self.cacheGet(url)
-            
-            # un-dms with system call
-            fname = os.path.join(self.cachedir, image["file"])
-            
-            #dmsline = "dms write %s to %s" % (fname, self.amidisk)
-            # http://zakalwe.fi/~shd/foss/xdms/xdms.txt
-            dmsline = "xdms u %s" % (fname)
-            adfname = image["file"].replace(image["type"],".adf")
-            if debug:
-                print "Creating %s from %s" %(adfname, fname)
-
-            #os.system(dmsline)
-            commands.append(dmsline)
-            print adfname
-            
+        # iterate over disks
+        if numdisks>0:
+            for i in range(numdisks):
+                disknum=i+1
+                reqimages = len(images[disknum])
+                print "Disk %d requires %d images" % (disknum, reqimages)
+                if reqimages >1:
+                    print "*** Error: Cannot currently handle the case of multiple images per disk"
+                    return False
+                image = images[disknum][0]
+                
+                # check for dms
+                if image["type"]!=".dms":
+                    print "*** Error: Cannot currently handle anything else than .dms"
+                    return False
+                print image
+                
+                # get file
+                if debug: 
+                    print image["seenat"],image["file"]
+                url = image["seenat"]+"/"+image["file"]
+                print "Trying to get %s from %s" % (image["file"], url)
+                self.cacheGet(url)
+                
+                # un-dms with system call
+                fname = os.path.join(self.cachedir, image["file"])
+                #dmsline = "dms write %s to %s" % (fname, self.amidisk)
+                # http://zakalwe.fi/~shd/foss/xdms/xdms.txt
+                adfname = image["file"].replace(image["type"],".adf")
+                adfnamefull = os.path.join(self.cachedir, adfname)
+                dmsline = "xdms -d %s u %s +%s" % (self.cachedir, fname,adfname)
+                if debug:
+                    print "Creating %s from %s" %(adfnamefull, fname)
+    
+                #os.system(dmsline)
+                commands.append(dmsline)
+        else:
+            print "*** Error: no disks found!"
+            sys.exit()
                       
         # unpack installer
         iname = os.path.join(self.cachedir, data["install"])
-        lhaline = "lha x -N %s %s" % (iname ,self.tempdir)
-        # "lha e -x0 -N %s #?.inf #?.slave #?README %s"%(iname ,self.tempdir)
+        #lhaline = "lha x -N %s %s" % (iname ,self.tempdir)
+        lhaline = "lha e -x0 -N %s #?.inf #?.slave #?README %s" % (iname ,self.tempdir)
+        #lhaline = "lha e -x0 -N %s #?.slave #?README %s" % (iname ,self.tempdir) # no inf
         commands.append(lhaline)
 
         # ab hier wirds h?sslich hardcoded zum ende des tages :)
@@ -462,22 +488,33 @@ class whdloadWebProxyDemos:
         #commands.append('cd "t:NotAgain Install"')
         
         # DIC produces Disk.1
-        copyline = 'copy %s to "t:NotAgain Install/Disk.1"' %(adfname)
+        copyline = 'copy %s/%s to "t:Disk.1"' %(self.cachedir, adfname)        
         commands.append(copyline)
         #commands.append('list "t:NotAgain Install/"')
         
+        # get slave mit lha
+        # echo noline "whdload "
+        # lha lq -N %s #?.slave >> t:go
+        commands.append('echo ";1" >t:go')
+        commands.append('echo noline "whdload " >>t:go')
+        commands.append('lha lq -N %s #?.slave >> t:go' % iname)
+
         #commands.append('cd "t:NotAgain Install/"')
-        commands.append('rename "t:NotAgain Install/NotAgain.inf" "t:NotAgain Install/NotAgain.info"')
-        commands.append('list "t:NotAgain Install/"')
-        commands.append('cd "t:NotAgain Install/"\nwhdload Notagain.slave')
+        #commands.append('rename "t:NotAgain.inf" "t:NotAgain.info"')
+        #commands.append('list "t:"')
+        commands.append('cd t:')
+        #commands.append('cd "t:"\nwhdload Notagain.slave')      
+
         # recap
-        print "\n\n--> List of commands:"
-        for command in commands:
-            print command
+        #print "\n--> List of commands:"
+        #for command in commands:
+        #    print command
         
         # go (amiga only)
+#        print "\n--> Performing jobs"
         if not self.isAmiga:
-           print "*** Error: Not running on Amiga!"
+           print "*** Warning: Not running on Amiga, but installation commands are Amiga OS specific. (Run the same script inside Amiga.)"
+           print "Stop."
            return
 
         for command in commands:
@@ -485,31 +522,103 @@ class whdloadWebProxyDemos:
             
         
         return
+   
 
-def test(demo):
+def test(demo,debug=False,verbose=False):
     has = demos.hasDemo(demo)
-    print "%s, %s" % (demo, has)
+    if debug:
+        print "%s, %s" % (demo, has)
     if has:
-        print "  %s" % demos.getMeta(demo, debug= False)
+        if verbose:
+            print "  %s" % demos.getMeta(demo, debug=debug)
         # try to install
-        demos.install(demo, debug=True)
+        demos.install(demo, debug=debug, verbose=verbose)
         
-        
+
+
+#---get the arguments
+print "Wim.py v0.04, WHDLoad Install Manager by Leif Oppermann (17.10.2013)"
+#print "  automates your WHDLoad installation chores"
+
+optlist, args = getopt.getopt(sys.argv[1:],'i:vlbc')
+if len(optlist)==0:
+    print "what to do?"
+    sys.exit()
+ 
+#print optlist, args       
 
 # instantiate
 demos = whdloadWebProxyDemos()
 
-# test amiga and pc
-#print demos.prods
+for o, a in optlist:
+    print o, a
 
-#print demos.getKnownDemos()
+    if o== "-l":
+        print demos.getKnownDemos()
+        sys.exit()
 
-test("Not Again")
-#test("Planet M")
+    if o == "-v":
+        print "  verbose"
+        debug=True
+
+    if o == "-b":
+        print "  build tables"
+        demos.buildTables(recursive=True)
+        sys.exit()
+
+#    if o == "-c":
+        #print "  capabilities are: 'urllib'-%s, 'bs4'-%s" % (q(config["has_urllib"],"True","False"), q(config["has_bs4"],"True","False"))
+
+
+    if o == "-i":
+        #print "  install: %s" % a
+        test(a,debug=False,verbose=False)
+
+
+# noch nicht unterstuetzt:
+# Audio Violation - guter Test for rawdic Datei extrahierung
+# Arte - 1 Disk 2 Files, not linked in index
+# Chromagic - dms link aus text beschreibung pulen
+# Dance Diverse Vol.1, Delirium, most Megademos - error 205
+# Digital Complexity - nicht Disk.1 sondern data (und dann fehler)
+# Project Techno - Archive Fehler? go kaputt
+# Roots - noch nicht im Index
+# The Simpsons - .lha lag nicht im cahcedir
+
+
+
+
 #test("Dizzy Tunes")
 #test("Dizzy Tunes 2")
 #test("Face Another Day")
 #test("Voyage")
+
+'''
+works:
+
+Not Again
+Antideluvian Sloppy Spectacle
+Groovy
+Autumn Nights
+Bard In A Box
+Planet M (demo too fast, not my fault)
+Capricorn One
+Cherokee
+Crayon Shinchan
+Deja Vu (demo laeuft mit logo und musik, aber dann kommt nichts)
+Earwig
+Exage
+Innership
+Jukebox
+Linus
+Maximum Velocity
+Megablast
+# 17.10.13 - reinstalled python at home 2.7.5, got 480 instead of 327 demos now
+Roots
+Monoxide
+'''
+
+
 
 
 
