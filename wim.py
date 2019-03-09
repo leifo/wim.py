@@ -160,13 +160,13 @@ else:
 # set up directories
 config["cachedir"]="data/cache"
 config["tempdir"]="temp"
-config["ramtempdir"]="t:\\"
+config["ramtempdir"]="temp"
 config["manageddir"]="managed"
 
 config["arcdir"]="arc"
 #config["arcdir"]="x:\\amiga\\kg\\packs"
 
-config["scratchdirsuffix"]="scratch"
+config["scratchdirsuffix"]="!scratch"
 
 
 def q(cond, on_true, on_false):
