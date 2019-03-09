@@ -1,26 +1,18 @@
 #!/usr/bin/env python
-import time
-import sys
-import os
 import urlparse
-import pickle
+
+import lhafile
 
 import wicked.cache
 import wicked.helpers
 from wicked.assigns import *
-from wicked.rapath import raPath
-
-import lhafile
-import md5, base64
-
-from wicked.io.joblist import joblist
-from wicked.io.lhajob import unlha
-from wicked.io.zipjob import unzip
 from wicked.io.copyjob import copy
 from wicked.io.dmsjob import undms
+from wicked.io.joblist import joblist
+from wicked.io.lhajob import unlha
 from wicked.io.renamejob import rename
-
-import cStringIO as StringIO
+from wicked.io.zipjob import unzip
+from wicked.rapath import raPath
 
 try:
     from bs4 import BeautifulSoup
@@ -28,7 +20,8 @@ except:
     pass
 
 # only needed for build-hashing (-bh)
-import re, urllib, shutil
+import re, urllib
+
 
 class whdloadproxy:
     config = {}
@@ -475,8 +468,10 @@ class whdloadproxy:
         if self.config["has_bs4"] == False:
             return
         # s = self.cacheGet(self.url_path + self.brain["prods"][demoname]["infox"])
-        s = self.cache.get(
-            self.url_whdload + self.brain["prods"][demoname]["category"] + self.brain["prods"][demoname]["info"])
+        #!!!todo:fixme new cache url for infopage in parseInfo
+        url = os.path.join(self.url_whdload,  self.brain["prods"][demoname]["category"], self.brain["prods"][demoname]["info"])
+        s = self.cache.get(url)
+        ###    self.url_whdload + self.brain["prods"][demoname]["category"] + self.brain["prods"][demoname]["info"])
         # parse html
 
         if debug:
@@ -1058,7 +1053,7 @@ class whdloadproxy:
             return
 
         # commands=[] # these will be executed one after another on target system
-        jobs = joblist("preparations for %s" % data["prodname"], False)
+        jobs = joblist("preparations for %s" % data["prodname"], True)
 
         # make sure to have metadata
         meta = self.getMeta(entityname)
@@ -1089,7 +1084,7 @@ class whdloadproxy:
             #
         # commands batch 1 (Amiga only), unpack installer
         # unpack installer, with special case for "ctros"
-        iname = os.path.join(self.cachedir, data["install"])
+        iname = os.path.join(self.cachedir, "www.whdload.de", data["category"], data["install"])
         # lhaline = "lha e -N %s %s/" % (iname , installdir)
         # commands.append(lhaline)   #!!!
         job1 = unlha(iname, scratchdir, False)
@@ -1114,7 +1109,7 @@ class whdloadproxy:
         else:
             # new code
             jobs.execute() # todo: fix crash bug for "demos/FlyingCows_ProSIAK"
-            jobs = joblist("install %s" % data["prodname"], False)
+            jobs = joblist("install %s" % data["prodname"], True)
             # find slave, adjust target-dir
             dir = self.findSlaveDir(scratchdir, hashing=hashing)
             if dir != scratchdir:
@@ -1159,7 +1154,7 @@ class whdloadproxy:
                 # handle dms - done
                 if type == ".dms":
                     # un-dms with system call
-                    fname = os.path.join(assign(self.tempdir), image["file"])
+                    fname = os.path.join(assign(self.tempdir), self.tempcache.getpathname(url))
                     adfname = image["file"].lower().replace(image["type"],
                                                             ".adf")  # lower okay as Amiga filesystem is not case sensitive (error found with "r.o.m. 1" which has upper case .DMS)
                     adfnamefull = os.path.join(assign(self.tempdir), adfname)
@@ -1691,7 +1686,7 @@ class whdloadproxy:
                             meta["infoparsed"] = False
 
                             # get list of possible install files
-                            filename = self.cache.getFilename(url_install)
+                            filename = self.cache.getfilename(url_install)
                             installmethod=None
                             if lhafile.is_lhafile(filename):
                                 l = lhafile.Lhafile(filename)
@@ -1957,9 +1952,7 @@ import zipfile
 import cStringIO as StringIO
 # import lhafile (only pc c-extension, but like zipfile)
 import md5
-import pickle
-import os,sys,getopt,time
-from wicked.helpers import dicthelpers
+import os,sys, time
 import base64 # looking for shorter filenames as of http://effbot.org/librarybook/md5.htm
 
 

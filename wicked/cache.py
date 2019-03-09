@@ -36,9 +36,10 @@ class cache:
             print("\r")
 
     def report(self, blockcount, blocksize, totalsize):
-        #The hook will be passed three arguments; a count of blocks transferred so far, a block size in bytes, and the total size of the file. 
-        #https://docs.python.org/2/library/urllib.html
-        #print blockcount, blocksize, totalsize
+        # The hook will be passed three arguments; a count of blocks transferred so far, a block size in bytes,
+        # and the total size of the file.
+        # https://docs.python.org/2/library/urllib.html
+        # print blockcount, blocksize, totalsize
         if False:   #totalsize>-1:    # -1 on old FTP servers
             # known totalsize
             #sys.stdout.write('%d bytes\r' % (blockcount*blocksize) )
@@ -49,10 +50,10 @@ class cache:
             # unknown totalsize
             sys.stdout.write('  %d bytes\r' % (blockcount*blocksize) )
             sys.stdout.flush()
-        
-    def getFilename(self, url, debug=False):
+
+    def getpathname(self, url):
         '''
-        Return full filename of cached content or None
+        Return pathname of cached content or None
 
         Returns a string or None
         '''
@@ -63,7 +64,17 @@ class cache:
         netloc = o.netloc
         netpath = o.path
         fullname = netloc+netpath
-        filename = os.path.join(self.cachedir,fullname)
+        return fullname
+
+    def getfilename(self, url, debug=False):
+        '''
+        Return full filename of cached content or None
+
+        Returns a string or None
+        '''
+
+        fullname = self.getpathname(url)
+        filename = os.path.join(self.cachedir, fullname)
         if debug:
             print filename
         if os.path.exists(filename):
@@ -81,14 +92,9 @@ class cache:
         
         Returns a string
         '''
-               
-        # get basename (last component) and construct local filename
-        #basename = os.path.basename(url)
-        o = urlparse(url)
-        netloc = o.netloc
-        netpath = o.path
-        fullname = netloc+netpath
-        filename = os.path.join(self.cachedir,fullname)
+
+        fullname = self.getpathname(url)
+        filename = os.path.join(self.cachedir, fullname)
         if debug:
             print filename
         
@@ -115,7 +121,7 @@ class cache:
                 if debug:
                     print "cache: need to create directory %s" % head
                 shutil.os.makedirs(head)
-            (localfilename, headers)=urllib.urlretrieve(url,filename, self.report)
+            (localfilename, headers)=urllib.urlretrieve(url, filename, self.report)
             #content = urllib.urlopen(url).read()
             #savefile = open(filename, "wb")
             #savefile.write(content)
@@ -137,6 +143,5 @@ if __name__ == '__main__':
     r = o.get(u, debug=True)
     print len(r)
 
-    q = o.getFilename(u)
+    q = o.getfilename(u)
     print q
-    #s = o.getFilename(u)
