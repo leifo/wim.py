@@ -470,7 +470,7 @@ class whdloadproxy:
         # s = self.cacheGet(self.url_path + self.brain["prods"][demoname]["infox"])
         #!!!todo:fixme new cache url for infopage in parseInfo
         url = os.path.join(self.url_whdload,  self.brain["prods"][demoname]["category"], self.brain["prods"][demoname]["info"])
-        s = self.cache.get(url)
+        s = self.cache.get(url, flat=True)
         ###    self.url_whdload + self.brain["prods"][demoname]["category"] + self.brain["prods"][demoname]["info"])
         # parse html
 
@@ -762,7 +762,7 @@ class whdloadproxy:
                 if debug:
                     print md5hash
 
-                #print self.hashes[md5hash]["type"]
+                #print self.hashes[md5hash]
                 self.findHashRoute(md5hash)
                 ## step through list of known sightings and find route to top-file
                 # listhashes = self.hashes[md5hash]
@@ -1084,7 +1084,8 @@ class whdloadproxy:
             #
         # commands batch 1 (Amiga only), unpack installer
         # unpack installer, with special case for "ctros"
-        iname = os.path.join(self.cachedir, "www.whdload.de", data["category"], data["install"])
+        # iname = os.path.join(self.cachedir, "www.whdload.de", data["category"], data["install"])
+        iname = os.path.join(self.cachedir, data["install"])
         # lhaline = "lha e -N %s %s/" % (iname , installdir)
         # commands.append(lhaline)   #!!!
         job1 = unlha(iname, scratchdir, False)
@@ -1252,7 +1253,8 @@ class whdloadproxy:
                 for h in hashes:
                     print "Try hash %s: %s" % (c, h)
                     c = c + 1
-                    route = self.findHashRoute(h)
+                    t1,t2,t3=h
+                    route = self.findHashRoute(t3)
                     if len(route) > 0:
                         foundHashRoute = True
                         if len(route) < beststeps:
@@ -1449,13 +1451,15 @@ class whdloadproxy:
             shutil.rmtree(scratchdir)
             os.makedirs(scratchdir)
 
-
     def hashSlavesInLha(self, install, verbose=False):
         '''
         hash all possible slaves (could be install slaves) in install archive and return as list of md5 hashes
         '''
+        if install == "Anarchy_Madness.lha":
+            pass
         hashlist = []
         # check and open lha (using http://trac.neotitans.net/wiki/lhafile)
+        # !!!todo: fix cache dir for lha hashing
         lhafilename = os.path.join(self.cachedir, install)
         if lhafile.is_lhafile(lhafilename):
             f = lhafile.Lhafile(lhafilename)
@@ -1558,7 +1562,7 @@ class whdloadproxy:
         lines = string.splitlines()
 
         iscommentblocks = False  # True while scanning comment lines
-        lastlinewascomment = False  # non-commment lines will trigger a new block
+        lastlinewascomment = False  # non-comment lines will trigger a new block
         numcommentblocks = 0  # counter for simple check
         hadplaceholder = False  # placeholder-block between first and second comment
         placeholderdone = False  # True after placeholder-block has been done, allows for speedup with real data
@@ -1658,7 +1662,7 @@ class whdloadproxy:
                             # url=os.path.join(self.url_whdload,category,install)
 
                             # get lha-file to cache
-                            s = self.cache.get(url_install)  # got cached lha
+                            s = self.cache.get(url_install, flat=True)  # got cached lha
 
                             prodname = name
 
@@ -1831,7 +1835,7 @@ class whdloadproxy:
         '''
         # if debug:
         print install, url_info
-        s = self.cache.get(url_info)
+        s = self.cache.get(url_info, flat=True)
         # print url_info
         # if url_info =="http://www.whdload.de/games/1943.html":
         hrefs = []
@@ -1876,7 +1880,7 @@ class whdloadproxy:
                         # get a local copy of all of them
                         for href in hrefs:
                             print "  downloading old install: '%s'" % href
-                            self.cache.get(href)
+                            self.cache.get(href, flat=True)
 
                             # print install
         else:

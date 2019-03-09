@@ -82,7 +82,7 @@ class cache:
         else:
             return None
 
-    def get(self, url, debug=False):
+    def get(self, url, debug=False, flat=True):
         '''
         Gets content from a URL and drops a copy in cachedir. Will use content from the cached file from then on.
         
@@ -93,7 +93,13 @@ class cache:
         Returns a string
         '''
 
-        fullname = self.getpathname(url)
+        if flat:
+            # flat cache dir is handy for www.whdload.de files
+            head, tail = os.path.split(url)
+            fullname = tail
+        else:
+            # otherwise use full path hierarchy
+            fullname = self.getpathname(url)
         filename = os.path.join(self.cachedir, fullname)
         if debug:
             print filename

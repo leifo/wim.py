@@ -530,7 +530,7 @@ for o, a in optlist:
 
     if o == "-w":
         print " starting web interface"
-        have_h = True
+        have_w = True
         from wicked.ui import web2
 
         # cb.setContent("Hello Bottle!")
