@@ -1,0 +1,30 @@
+# build undms using scons
+# 18.06.16
+# based on https://bitbucket.org/scons/scons/wiki/SconsTutorial1
+
+# 01.07.2016, make sensible names per platform
+
+# should import this from wicked.helpers later
+def getPlatformString():
+    # try to build a platform string that can be used to call correspondingly named tools in \bin
+    # returns: win32 (on any Windows), darwin-powerpc (on my PPC 10.4), amiga (on any Amiga)
+    # linux2: i686 for centrino 32 bit laptop, x86_64 for desktop
+    # todo: check darwin-intel string and name tools accordingly (i386)
+    # sys.platform: amiga, darwin, win32
+    # platform.processor: amiga (n.a.), darwin (powerpc), win32 (disregard as too much detail)
+    import sys
+    plat = sys.platform
+    if  plat == "win32":
+        return plat
+
+    if  plat == "amiga":
+        return plat
+
+    import platform
+    cpu = platform.processor()
+    s = "%s-%s" %(plat, cpu)
+    return s
+
+env = Environment()  # Initialize the environment
+env.Program(target = 'undms-%s' % getPlatformString(), source = ["undms-1.3.c"])
+print getPlatformString()
