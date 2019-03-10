@@ -83,7 +83,7 @@ class Cache:
         else:
             return None
 
-    def get(self, url, debug=False, flat=True):
+    def get(self, url, debug=False, flat=False):
         '''
         Gets content from a URL and drops a copy in cachedir. Will use content from the cached file from then on.
         
