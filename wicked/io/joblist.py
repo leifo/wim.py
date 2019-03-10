@@ -8,16 +8,17 @@
 from superjob import *
 from collections import deque
 
-class joblist(superjob):
+
+class JobList(superjob):
     '''
     write the doc :)
     '''
-    def __init__(self,listname,debug=False):
-        superjob.__init__(self, name="joblist",debug=debug)
-        self.listname=listname
-        self.jobs=deque()
+    def __init__(self, listname, debug=False):
+        superjob.__init__(self, name="joblist", debug=debug)
+        self.listname = listname
+        self.jobs = deque()
         
-        #if self.debug:
+        # if self.debug:
         #    print "%s init ctd. for '%s'" % (self.name, self.listname)
 
     def execute(self):
@@ -34,19 +35,19 @@ class joblist(superjob):
         self.jobs.append(jobinstance)
         
 if __name__ == '__main__':
-    import renamejob,lhajob,copyjob,dmsjob,zipjob
-    l=joblist("example list",True)
+    import renamejob, lhajob, copyjob, dmsjob, zipjob
+    l = JobList("example list", True)
     
     # testing all commands
-    f=open("t:/rename_source.txt","wb")
+    f = open("t:/rename_source.txt", "wb")
     f.write("hjkashd")
     f.close()
     
-    l.addjob(renamejob.rename("t:/rename_source.txt","t:/1-renamed.txt",True) )
-    l.addjob(copyjob.copy("t:/1-renamed.txt", "t:/2-copied.txt") )
-    l.addjob(lhajob.unlha("t:/Turrican.lha","t:/",True) )
-    l.addjob(zipjob.unzip("t:/zipjob.zip","t:/",True) )
-    l.addjob(dmsjob.undms("t:\SANITY-Arte.dms","t:\Sanity-Arte.adf",True) )
+    l.addjob(renamejob.rename("t:/rename_source.txt","t:/1-renamed.txt", True))
+    l.addjob(copyjob.copy("t:/1-renamed.txt", "t:/2-copied.txt"))
+    l.addjob(lhajob.unlha("t:/Turrican.lha","t:/", True))
+    l.addjob(zipjob.unzip("t:/zipjob.zip","t:/", True))
+    l.addjob(dmsjob.undms("t:\SANITY-Arte.dms","t:\Sanity-Arte.adf", True))
     
     l.execute()
     l.__exit__()

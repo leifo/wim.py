@@ -115,7 +115,7 @@ from wicked.proxy.whdload import whdloadproxy  # (could lead to an abstract inte
 from wicked.proxy.whdload import whdloadhasher
 
 # update code and these imports should go to whdload.py
-from wicked.io.joblist import joblist
+from wicked.io.joblist import JobList
 from wicked.io.lhajob import unlha, unlhaSingleFile
 from wicked.io.copyjob import copy
 
@@ -433,7 +433,7 @@ def updateDir(updatedir, debug=False, verbose=True, hashing=False, force=False):
         return
     print "okay to proceed\n"
 
-    l=joblist("update list",True)
+    l=JobList("update list", True)
 
     for tuple in updatelist:
         prodname,localslavepath = tuple

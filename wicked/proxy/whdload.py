@@ -8,7 +8,7 @@ import wicked.helpers
 from wicked.assigns import *
 from wicked.io.copyjob import copy
 from wicked.io.dmsjob import undms
-from wicked.io.joblist import joblist
+from wicked.io.joblist import JobList
 from wicked.io.lhajob import unlha
 from wicked.io.renamejob import rename
 from wicked.io.zipjob import unzip
@@ -84,8 +84,8 @@ class whdloadproxy:
             print "Not running on Amiga, assign t: to /tempdir" # todo: double-check this path
 
         # setup cache-dirs
-        self.cache = wicked.cache.cache(self.cachedir)
-        self.tempcache = wicked.cache.cache(self.tempdir)
+        self.cache = wicked.cache.Cache(self.cachedir)
+        self.tempcache = wicked.cache.Cache(self.tempdir)
 
     def setVariables(self, debug=False, verbose=False):
         '''
@@ -1053,7 +1053,7 @@ class whdloadproxy:
             return
 
         # commands=[] # these will be executed one after another on target system
-        jobs = joblist("preparations for %s" % data["prodname"], True)
+        jobs = JobList("preparations for %s" % data["prodname"], True)
 
         # make sure to have metadata
         meta = self.getMeta(entityname)
@@ -1110,7 +1110,7 @@ class whdloadproxy:
         else:
             # new code
             jobs.execute() # todo: fix crash bug for "demos/FlyingCows_ProSIAK"
-            jobs = joblist("install %s" % data["prodname"], True)
+            jobs = JobList("install %s" % data["prodname"], True)
             # find slave, adjust target-dir
             dir = self.findSlaveDir(scratchdir, hashing=hashing)
             if dir != scratchdir:
@@ -1122,7 +1122,7 @@ class whdloadproxy:
 
         category = data["category"]
         # iterate over disks
-        if numdisks > 0 or category == "ctros":
+        if hashing == False and (numdisks > 0 or category == "ctros"):
             for i in range(numdisks):
                 disknum = i + 1
                 multiimages = False  # True if more than 1 image per disk
@@ -1286,7 +1286,7 @@ class whdloadproxy:
             #arc = "archive:kg/packs"  ## hacked - todo
             #arc = "x:\\amiga\\kg\\packs"
             #arc = assign("PROGDIR:arc")  ## hacked - todo (packs)
-            jobs = joblist("hash-install %s" % data["prodname"], False)
+            jobs = JobList("hash-install %s" % data["prodname"], False)
             if steps == 3:
                 if debug:
                     print bestroute
@@ -2014,8 +2014,29 @@ class whdloadhasher:
                         return key
         return ""
 
-    def analyzeZIP(self, filehandle, container="", filename=""):
+    def analyselhafile(self, filehandle, container="", filename=""):
         '''
+        check if file is .slave, .zip, .lha; recursively iterate over archive files
+
+        prior to Python v2.7 only filename
+        http://docs.python.org/2/library/zipfile
+        take in an open file-handle (e.g. from open or zipfile.open) and return True if it is ZIP
+        '''
+        print "analysing %s" % filename
+        return
+        print filehandle
+        dir(filehandle)
+        # load file with stringio
+        memfile = StringIO.StringIO()
+        memfile.write(filehandle.read(filehandle.name))
+        memfile.seek(0)
+        if lhafile.is_lhafile(memfile):
+            print "BING"
+
+    def analysezipfile(self, filehandle, container="", filename=""):
+        '''
+        check if file is .slave, .zip, .lha; recursively iterate over archive files
+
         prior to Python v2.7 only filename
         http://docs.python.org/2/library/zipfile
         take in an open file-handle (e.g. from open or zipfile.open) and return True if it is ZIP
@@ -2027,6 +2048,24 @@ class whdloadhasher:
                 # get filename
                 zfilename = info.filename
                 # print zfilename
+
+                # recurse if filename ends on .zip
+                if zfilename.lower().endswith(".lha"):
+                    print" recursing into '%s'" % zfilename
+                    i = z.getinfo(zfilename)
+                    # load file with stringio
+                    memfile = StringIO.StringIO()
+                    memfile.write(z.read(zfilename))
+                    memfile.seek(0)
+                    try:
+                        # archive Commodore_Amiga_-_WHDLoad_-_Demos/F/Forgotten_v1.0_Mirage.lha contains invalid dates
+                        # that break lhafile with "ValueError: second must be in 0..59"
+                        f = lhafile.Lhafile(memfile)
+                        for name in f.namelist():
+                            pass    #print name
+                    except:
+                        print "***ERROR: with file %s" % zfilename
+                        pass
 
                 # recurse if filename ends on .zip
                 if zfilename.lower().endswith(".zip"):
@@ -2072,7 +2111,7 @@ class whdloadhasher:
 
                     # step into containing file
                     memfile.seek(0)
-                    self.analyzeZIP(memfile, container=ziphash, filename=zfilename)
+                    self.analysezipfile(memfile, container=ziphash, filename=zfilename)
                     print "******************************"
                 # compute md5 hash if filename ends on .slave
                 if zfilename.lower().endswith(".slave"):
@@ -2112,6 +2151,8 @@ class whdloadhasher:
             fullfilename = os.path.join(self.arcdir, filename)
             print fullfilename
             filehandle = open(fullfilename, "rb")
+
+            # currently supports a)zipfile and b)lhafile
             if zipfile.is_zipfile(filehandle):
                 sys.stdout.write("*** Info: ZIP-file '%s', " % fullfilename)
                 if self.isknownfilename(filename):
@@ -2130,10 +2171,31 @@ class whdloadhasher:
 
                     print " md5: %s" % (ziphash)
 
-                    # open file and analyze
-                    self.analyzeZIP(filehandle, container=ziphash, filename=filename)
+                    # open file and analyse
+                    self.analysezipfile(filehandle, container=ziphash, filename=filename)
             else:
-                pass
-                # print "*** Warning: not a zip-file: %s ... skipping" % fullfilename
+                if lhafile.is_lhafile(fullfilename):
+                    sys.stdout.write("*** Info: LHA-file '%s', " % fullfilename)
+                    if self.isknownfilename(filename):
+                        print "is known"
+                        lhahash = self.findhash(filename)
+                    else:
+                        lhahash = self.md5hexfile(fullfilename)
+                        hi = {}
+                        hi["fullname"] = filename
+                        head, tail = os.path.split(filename)
+                        hi["filename"] = tail
+                        hi["type"] = "f"  # file
+
+                        # hashes[lhafile] = hi
+                        self.dh.logValueToDict(self.hashes, lhahash, hi)
+
+                        print " md5: %s" % (lhahash)
+
+                        # open file and analyze
+                        self.analyselhafile(filehandle, container=lhahash, filename=filename)
+                else:
+                    # pass
+                    print "*** Warning: unsupported filetype: %s ... skipping" % fullfilename
 
         self.dh.saveDictionary(self.hashes, "data/brain-hashes.dict")
