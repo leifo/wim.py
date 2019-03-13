@@ -43,7 +43,7 @@ class undms(superjob):
             if pstring == "win32":
                 cmdline="bin\undms-win32.exe %s %s" % (self.fromfile, self.tofile)
             else:
-                cmdline = "bin/undms-%s %s %s" % (pstring, self.fromfile, self.tofile)
+                cmdline = "./bin/undms-%s %s %s" % (pstring, self.fromfile, self.tofile)
 
             if self.debug:
                 print "undms cmdline: "+cmdline

@@ -1,26 +1,18 @@
 #!/usr/bin/env python
-import time
-import sys
-import os
 import urlparse
-import pickle
+
+import lhafile
 
 import wicked.cache
 import wicked.helpers
 from wicked.assigns import *
-from wicked.rapath import raPath
-
-import lhafile
-import md5, base64
-
-from wicked.io.joblist import joblist
-from wicked.io.lhajob import unlha
-from wicked.io.zipjob import unzip
 from wicked.io.copyjob import copy
 from wicked.io.dmsjob import undms
+from wicked.io.joblist import JobList
+from wicked.io.lhajob import unlha
 from wicked.io.renamejob import rename
-
-import cStringIO as StringIO
+from wicked.io.zipjob import unzip
+from wicked.rapath import raPath
 
 try:
     from bs4 import BeautifulSoup
@@ -28,7 +20,8 @@ except:
     pass
 
 # only needed for build-hashing (-bh)
-import re, urllib, shutil
+import re, urllib
+
 
 class whdloadproxy:
     config = {}
@@ -91,8 +84,8 @@ class whdloadproxy:
             print "Not running on Amiga, assign t: to /tempdir" # todo: double-check this path
 
         # setup cache-dirs
-        self.cache = wicked.cache.cache(self.cachedir)
-        self.tempcache = wicked.cache.cache(self.tempdir)
+        self.cache = wicked.cache.Cache(self.cachedir)
+        self.tempcache = wicked.cache.Cache(self.tempdir)
 
     def setVariables(self, debug=False, verbose=False):
         '''
@@ -475,8 +468,10 @@ class whdloadproxy:
         if self.config["has_bs4"] == False:
             return
         # s = self.cacheGet(self.url_path + self.brain["prods"][demoname]["infox"])
-        s = self.cache.get(
-            self.url_whdload + self.brain["prods"][demoname]["category"] + self.brain["prods"][demoname]["info"])
+        #!!!todo:fixme new cache url for infopage in parseInfo
+        url = os.path.join(self.url_whdload,  self.brain["prods"][demoname]["category"], self.brain["prods"][demoname]["info"])
+        s = self.cache.get(url, flat=True)
+        ###    self.url_whdload + self.brain["prods"][demoname]["category"] + self.brain["prods"][demoname]["info"])
         # parse html
 
         if debug:
@@ -767,7 +762,7 @@ class whdloadproxy:
                 if debug:
                     print md5hash
 
-                #print self.hashes[md5hash]["type"]
+                #print self.hashes[md5hash]
                 self.findHashRoute(md5hash)
                 ## step through list of known sightings and find route to top-file
                 # listhashes = self.hashes[md5hash]
@@ -1058,7 +1053,7 @@ class whdloadproxy:
             return
 
         # commands=[] # these will be executed one after another on target system
-        jobs = joblist("preparations for %s" % data["prodname"], False)
+        jobs = JobList("preparations for %s" % data["prodname"], True)
 
         # make sure to have metadata
         meta = self.getMeta(entityname)
@@ -1089,6 +1084,7 @@ class whdloadproxy:
             #
         # commands batch 1 (Amiga only), unpack installer
         # unpack installer, with special case for "ctros"
+        # iname = os.path.join(self.cachedir, "www.whdload.de", data["category"], data["install"])
         iname = os.path.join(self.cachedir, data["install"])
         # lhaline = "lha e -N %s %s/" % (iname , installdir)
         # commands.append(lhaline)   #!!!
@@ -1114,7 +1110,7 @@ class whdloadproxy:
         else:
             # new code
             jobs.execute() # todo: fix crash bug for "demos/FlyingCows_ProSIAK"
-            jobs = joblist("install %s" % data["prodname"], False)
+            jobs = JobList("install %s" % data["prodname"], True)
             # find slave, adjust target-dir
             dir = self.findSlaveDir(scratchdir, hashing=hashing)
             if dir != scratchdir:
@@ -1126,7 +1122,7 @@ class whdloadproxy:
 
         category = data["category"]
         # iterate over disks
-        if numdisks > 0 or category == "ctros":
+        if hashing == False and (numdisks > 0 or category == "ctros"):
             for i in range(numdisks):
                 disknum = i + 1
                 multiimages = False  # True if more than 1 image per disk
@@ -1159,7 +1155,7 @@ class whdloadproxy:
                 # handle dms - done
                 if type == ".dms":
                     # un-dms with system call
-                    fname = os.path.join(assign(self.tempdir), image["file"])
+                    fname = os.path.join(assign(self.tempdir), self.tempcache.getpathname(url))
                     adfname = image["file"].lower().replace(image["type"],
                                                             ".adf")  # lower okay as Amiga filesystem is not case sensitive (error found with "r.o.m. 1" which has upper case .DMS)
                     adfnamefull = os.path.join(assign(self.tempdir), adfname)
@@ -1257,7 +1253,8 @@ class whdloadproxy:
                 for h in hashes:
                     print "Try hash %s: %s" % (c, h)
                     c = c + 1
-                    route = self.findHashRoute(h)
+                    t1,t2,t3=h
+                    route = self.findHashRoute(t3)
                     if len(route) > 0:
                         foundHashRoute = True
                         if len(route) < beststeps:
@@ -1289,7 +1286,7 @@ class whdloadproxy:
             #arc = "archive:kg/packs"  ## hacked - todo
             #arc = "x:\\amiga\\kg\\packs"
             #arc = assign("PROGDIR:arc")  ## hacked - todo (packs)
-            jobs = joblist("hash-install %s" % data["prodname"], False)
+            jobs = JobList("hash-install %s" % data["prodname"], False)
             if steps == 3:
                 if debug:
                     print bestroute
@@ -1454,13 +1451,15 @@ class whdloadproxy:
             shutil.rmtree(scratchdir)
             os.makedirs(scratchdir)
 
-
     def hashSlavesInLha(self, install, verbose=False):
         '''
         hash all possible slaves (could be install slaves) in install archive and return as list of md5 hashes
         '''
+        if install == "Anarchy_Madness.lha":
+            pass
         hashlist = []
         # check and open lha (using http://trac.neotitans.net/wiki/lhafile)
+        # !!!todo: fix cache dir for lha hashing
         lhafilename = os.path.join(self.cachedir, install)
         if lhafile.is_lhafile(lhafilename):
             f = lhafile.Lhafile(lhafilename)
@@ -1563,7 +1562,7 @@ class whdloadproxy:
         lines = string.splitlines()
 
         iscommentblocks = False  # True while scanning comment lines
-        lastlinewascomment = False  # non-commment lines will trigger a new block
+        lastlinewascomment = False  # non-comment lines will trigger a new block
         numcommentblocks = 0  # counter for simple check
         hadplaceholder = False  # placeholder-block between first and second comment
         placeholderdone = False  # True after placeholder-block has been done, allows for speedup with real data
@@ -1663,7 +1662,7 @@ class whdloadproxy:
                             # url=os.path.join(self.url_whdload,category,install)
 
                             # get lha-file to cache
-                            s = self.cache.get(url_install)  # got cached lha
+                            s = self.cache.get(url_install, flat=True)  # got cached lha
 
                             prodname = name
 
@@ -1691,7 +1690,7 @@ class whdloadproxy:
                             meta["infoparsed"] = False
 
                             # get list of possible install files
-                            filename = self.cache.getFilename(url_install)
+                            filename = self.cache.getfilename(url_install)
                             installmethod=None
                             if lhafile.is_lhafile(filename):
                                 l = lhafile.Lhafile(filename)
@@ -1836,7 +1835,7 @@ class whdloadproxy:
         '''
         # if debug:
         print install, url_info
-        s = self.cache.get(url_info)
+        s = self.cache.get(url_info, flat=True)
         # print url_info
         # if url_info =="http://www.whdload.de/games/1943.html":
         hrefs = []
@@ -1881,7 +1880,7 @@ class whdloadproxy:
                         # get a local copy of all of them
                         for href in hrefs:
                             print "  downloading old install: '%s'" % href
-                            self.cache.get(href)
+                            self.cache.get(href, flat=True)
 
                             # print install
         else:
@@ -1957,9 +1956,7 @@ import zipfile
 import cStringIO as StringIO
 # import lhafile (only pc c-extension, but like zipfile)
 import md5
-import pickle
-import os,sys,getopt,time
-from wicked.helpers import dicthelpers
+import os,sys, time
 import base64 # looking for shorter filenames as of http://effbot.org/librarybook/md5.htm
 
 
@@ -2017,8 +2014,29 @@ class whdloadhasher:
                         return key
         return ""
 
-    def analyzeZIP(self, filehandle, container="", filename=""):
+    def analyselhafile(self, filehandle, container="", filename=""):
         '''
+        check if file is .slave, .zip, .lha; recursively iterate over archive files
+
+        prior to Python v2.7 only filename
+        http://docs.python.org/2/library/zipfile
+        take in an open file-handle (e.g. from open or zipfile.open) and return True if it is ZIP
+        '''
+        print "analysing %s" % filename
+        return
+        print filehandle
+        dir(filehandle)
+        # load file with stringio
+        memfile = StringIO.StringIO()
+        memfile.write(filehandle.read(filehandle.name))
+        memfile.seek(0)
+        if lhafile.is_lhafile(memfile):
+            print "BING"
+
+    def analysezipfile(self, filehandle, container="", filename=""):
+        '''
+        check if file is .slave, .zip, .lha; recursively iterate over archive files
+
         prior to Python v2.7 only filename
         http://docs.python.org/2/library/zipfile
         take in an open file-handle (e.g. from open or zipfile.open) and return True if it is ZIP
@@ -2030,6 +2048,24 @@ class whdloadhasher:
                 # get filename
                 zfilename = info.filename
                 # print zfilename
+
+                # recurse if filename ends on .zip
+                if zfilename.lower().endswith(".lha"):
+                    print" recursing into '%s'" % zfilename
+                    i = z.getinfo(zfilename)
+                    # load file with stringio
+                    memfile = StringIO.StringIO()
+                    memfile.write(z.read(zfilename))
+                    memfile.seek(0)
+                    try:
+                        # archive Commodore_Amiga_-_WHDLoad_-_Demos/F/Forgotten_v1.0_Mirage.lha contains invalid dates
+                        # that break lhafile with "ValueError: second must be in 0..59"
+                        f = lhafile.Lhafile(memfile)
+                        for name in f.namelist():
+                            pass    #print name
+                    except:
+                        print "***ERROR: with file %s" % zfilename
+                        pass
 
                 # recurse if filename ends on .zip
                 if zfilename.lower().endswith(".zip"):
@@ -2075,7 +2111,7 @@ class whdloadhasher:
 
                     # step into containing file
                     memfile.seek(0)
-                    self.analyzeZIP(memfile, container=ziphash, filename=zfilename)
+                    self.analysezipfile(memfile, container=ziphash, filename=zfilename)
                     print "******************************"
                 # compute md5 hash if filename ends on .slave
                 if zfilename.lower().endswith(".slave"):
@@ -2115,6 +2151,8 @@ class whdloadhasher:
             fullfilename = os.path.join(self.arcdir, filename)
             print fullfilename
             filehandle = open(fullfilename, "rb")
+
+            # currently supports a)zipfile and b)lhafile
             if zipfile.is_zipfile(filehandle):
                 sys.stdout.write("*** Info: ZIP-file '%s', " % fullfilename)
                 if self.isknownfilename(filename):
@@ -2133,10 +2171,31 @@ class whdloadhasher:
 
                     print " md5: %s" % (ziphash)
 
-                    # open file and analyze
-                    self.analyzeZIP(filehandle, container=ziphash, filename=filename)
+                    # open file and analyse
+                    self.analysezipfile(filehandle, container=ziphash, filename=filename)
             else:
-                pass
-                # print "*** Warning: not a zip-file: %s ... skipping" % fullfilename
+                if lhafile.is_lhafile(fullfilename):
+                    sys.stdout.write("*** Info: LHA-file '%s', " % fullfilename)
+                    if self.isknownfilename(filename):
+                        print "is known"
+                        lhahash = self.findhash(filename)
+                    else:
+                        lhahash = self.md5hexfile(fullfilename)
+                        hi = {}
+                        hi["fullname"] = filename
+                        head, tail = os.path.split(filename)
+                        hi["filename"] = tail
+                        hi["type"] = "f"  # file
+
+                        # hashes[lhafile] = hi
+                        self.dh.logValueToDict(self.hashes, lhahash, hi)
+
+                        print " md5: %s" % (lhahash)
+
+                        # open file and analyze
+                        self.analyselhafile(filehandle, container=lhahash, filename=filename)
+                else:
+                    # pass
+                    print "*** Warning: unsupported filetype: %s ... skipping" % fullfilename
 
         self.dh.saveDictionary(self.hashes, "data/brain-hashes.dict")

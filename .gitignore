@@ -1,3 +1,9 @@
 *.pyc
 .idea
 data/cache/*
+managed/*
+temp/*
+arc/*
+*.o
+.sconsign*
+src/undms/undms-darwin-i386
